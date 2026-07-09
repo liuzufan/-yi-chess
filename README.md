@@ -134,7 +134,7 @@
 ### 在线试玩
 
 直接访问：**[https://yi-chess-liuzufan7.3481468325.workers.dev/](https://yi-chess-liuzufan7.3481468325.workers.dev/)**
-
+         ** https://liuzufan.github.io/-yi-chess/**
 ### 本地运行
 
 **方式一：直接打开**
