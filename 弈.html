@@ -385,6 +385,94 @@ function rpRebuildTo(step){
     drawXQ();xqSel=null;
   }
 }
+// 下载棋谱回放为独立HTML文件
+function downloadReplayHTML(){
+  if(!replayData){alert('请先选择一局棋谱');return}
+  var r=replayData;
+  var names={gomoku:'五子棋',go:'围棋',xq:'象棋'};
+  var resultText=r.result==='win'?'你胜':r.result==='lose'?'你负':r.result==='draw'?'平局':'未完成';
+  // 构建独立HTML
+  var html='<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n';
+  html+='<meta charset="UTF-8">\n';
+  html+='<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">\n';
+  html+='<title>'+r.name+' 回放 - 弈·棋道</title>\n';
+  html+='<style>\n';
+  html+='*{margin:0;padding:0;box-sizing:border-box}\n';
+  html+='body{background:#f5f0e6;color:#1c1917;font-family:"PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px}\n';
+  html+='h1{font-size:1.5rem;font-weight:300;letter-spacing:6px;margin-bottom:4px;color:#1c1917}\n';
+  html+='.info{font-size:.85rem;color:#78716c;margin-bottom:16px}\n';
+  html+='canvas{border-radius:8px;box-shadow:0 2px 12px rgba(60,40,10,.2);max-width:100%;height:auto}\n';
+  html+='.ctl{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap;justify-content:center}\n';
+  html+='button{padding:8px 18px;border:1px solid #d9cdb4;border-radius:20px;background:#ebe3d2;color:#8b5e3c;font-size:.85rem;cursor:pointer;transition:all .2s}\n';
+  html+='button:hover{background:#8b5e3c;color:#fff}\n';
+  html+='.step{font-size:.85rem;color:#78716c;min-width:60px;text-align:center}\n';
+  html+='.footer{margin-top:20px;font-size:.75rem;color:#a8a29e}\n';
+  html+='</style>\n</head>\n<body>\n';
+  html+='<h1>'+r.name+' 回放</h1>\n';
+  html+='<div class="info">'+r.date+' · '+r.moves.length+'手 · '+resultText+' · 难度'+r.diff+'</div>\n';
+  html+='<canvas id="board"></canvas>\n';
+  html+='<div class="ctl">';
+  html+='<button onclick="rpStep(-1)">◀ 上一步</button>';
+  html+='<div class="step" id="step">0/'+r.moves.length+'</div>';
+  html+='<button onclick="rpStep(1)">下一步 ▶</button>';
+  html+='<button onclick="rpStep(0)" id="playbtn">▶ 自动</button>';
+  html+='</div>\n';
+  html+='<div class="footer">弈·棋道 棋谱回放 · 双击打开即可查看</div>\n';
+  html+='<script>\n';
+  // 嵌入棋谱数据
+  html+='var RD='+JSON.stringify(r)+';\n';
+  // 棋盘参数
+  html+='var GS=15,GP=28,GC=36,GR=16,GX=GC*(GS-1)+GP*2;\n';
+  html+='var GSZ=19,GOP=24,GOC=30,GOR=13,GOSZ=GOC*(GSZ-1)+GOP*2;\n';
+  html+='var XC=54,XP=40,XW=8*XC+XP*2,XH=9*XC+XP*2;\n';
+  html+='var XC_H={1:"\\u5e05",2:"\\u4ed5",3:"\\u76f8",4:"\\u508c",5:"\\u4fe5",6:"\\u70ae",7:"\\u5175",8:"\\u5c07",9:"\\u58eb",10:"\\u8c61",11:"\\u99ac",12:"\\u8eca",13:"\\u70ae",14:"\\u5352"};\n';
+  html+='var XV=[0,10000,200,200,400,900,450,100,10000,200,200,400,900,450,100];\n';
+  // 画布和状态
+  html+='var cv,cx,rpStep2=0,rpTimer=null;\n';
+  html+='var gB,goB,xqB,goKo,gLast,goLast,xqSel,xqLegal;\n';
+  // 木纹纹理
+  html+='var _tc={};\n';
+  html+='function makeWT(w,h,seed){var k=w+"_"+h;if(_tc[k])return _tc[k];var oc=document.createElement("canvas");oc.width=w;oc.height=h;var ox=oc.getContext("2d");var s=seed||12345;function rng(){s=(s*9301+49297)%233280;return s/233280}var g=ox.createRadialGradient(w/2,h/2,0,w/2,h/2,w*.72);g.addColorStop(0,"#e8cc94");g.addColorStop(.35,"#dab87a");g.addColorStop(.7,"#c8a460");g.addColorStop(1,"#a8843c");ox.fillStyle=g;ox.fillRect(0,0,w,h);ox.save();ox.globalAlpha=.14;for(var i=0;i<35;i++){ox.strokeStyle=i%2===0?"#8b5e3c":"#6b4226";ox.lineWidth=.5+rng()*1.2;ox.beginPath();var y=(i/35)*h+rng()*8;ox.moveTo(0,y);ox.bezierCurveTo(w*.25,y+(rng()-.5)*20,w*.5,y+(rng()-.5)*20,w*.75,y+(rng()-.5)*15);ox.bezierCurveTo(w*.85,y+(rng()-.5)*12,w*.95,y+(rng()-.5)*8,w,y+(rng()-.5)*5);ox.stroke()}ox.restore();ox.save();ox.globalAlpha=.08;for(var i=0;i<20;i++){ox.strokeStyle="#5a3a1a";ox.lineWidth=.3+rng()*.4;ox.beginPath();var y=rng()*h;ox.moveTo(0,y);ox.bezierCurveTo(w*.3,y+(rng()-.5)*12,w*.6,y+(rng()-.5)*12,w,y+(rng()-.5)*8);ox.stroke()}ox.restore();ox.save();ox.globalAlpha=.06;for(var i=0;i<120;i++){ox.fillStyle=i%3===0?"#8b6914":"#6b4f10";ox.fillRect(rng()*w,rng()*h,rng()*2+.3,rng()*2+.3)}ox.restore();ox.save();ox.globalAlpha=.15;var vg=ox.createRadialGradient(w/2,h/2,w*.25,w/2,h/2,w*.7);vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(50,30,5,.7)");ox.fillStyle=vg;ox.fillRect(0,0,w,h);ox.restore();_tc[k]=oc;return oc}\n';
+  // drawPaper
+  html+='function drawP(w,h){cx.drawImage(makeWT(w,h),0,0)}\n';
+  // drawBall
+  html+='function drawBall(px,py,r,black){r=Math.max(2,r);cx.save();cx.shadowColor="rgba(0,0,0,.4)";cx.shadowBlur=r*.5;cx.shadowOffsetX=r*.1;cx.shadowOffsetY=r*.2;var g=cx.createRadialGradient(px-r*.4,py-r*.4,r*.03,px+r*.15,py+r*.15,r*1.15);if(black){g.addColorStop(0,"#7a7a7a");g.addColorStop(.1,"#4a4a4a");g.addColorStop(.3,"#2a2a2a");g.addColorStop(.6,"#121212");g.addColorStop(.9,"#080808");g.addColorStop(1,"#020202")}else{g.addColorStop(0,"#ffffff");g.addColorStop(.15,"#fcf8f0");g.addColorStop(.4,"#f5ede0");g.addColorStop(.7,"#e8dcc8");g.addColorStop(.9,"#d0c0a0");g.addColorStop(1,"#b8a888")}cx.fillStyle=g;cx.beginPath();cx.arc(px,py,r,0,Math.PI*2);cx.fill();cx.restore();cx.save();var hg=cx.createRadialGradient(px-r*.32,py-r*.32,0,px-r*.32,py-r*.32,r*.65);if(black){hg.addColorStop(0,"rgba(255,255,255,.22)");hg.addColorStop(.5,"rgba(255,255,255,.05)");hg.addColorStop(1,"rgba(255,255,255,0)")}else{hg.addColorStop(0,"rgba(255,255,255,.85)");hg.addColorStop(.4,"rgba(255,255,255,.3)");hg.addColorStop(1,"rgba(255,255,255,0)")}cx.fillStyle=hg;cx.beginPath();cx.arc(px,py,r,0,Math.PI*2);cx.fill();cx.restore();cx.save();cx.globalAlpha=black?.4:.2;cx.strokeStyle=black?"#000":"#a89878";cx.lineWidth=1;cx.beginPath();cx.arc(px,py,r-.5,0,Math.PI*2);cx.stroke();cx.restore()}\n';
+  // drawGomoku
+  html+='function drawGomoku(){drawP(GX,GX);cx.strokeStyle="rgba(107,82,48,.35)";cx.lineWidth=1.5;cx.strokeRect(GP-10,GP-10,(GS-1)*GC+20,(GS-1)*GC+20);cx.strokeStyle="rgba(80,55,25,.5)";cx.lineWidth=.8;cx.strokeRect(GP-6,GP-6,(GS-1)*GC+12,(GS-1)*GC+12);cx.strokeStyle="rgba(70,48,22,.7)";cx.lineWidth=.9;for(var i=0;i<GS;i++){cx.beginPath();cx.moveTo(GP,GP+i*GC);cx.lineTo(GP+(GS-1)*GC,GP+i*GC);cx.stroke();cx.beginPath();cx.moveTo(GP+i*GC,GP);cx.lineTo(GP+i*GC,GP+(GS-1)*GC);cx.stroke()}var sp=[[3,3],[3,11],[11,3],[11,11],[7,7]];cx.fillStyle="rgba(50,33,12,.8)";for(var i=0;i<sp.length;i++){cx.beginPath();cx.arc(GP+sp[i][0]*GC,GP+sp[i][1]*GC,3.5,0,Math.PI*2);cx.fill()}for(var y=0;y<GS;y++)for(var x=0;x<GS;x++)if(gB[y][x]!==0)drawBall(GP+x*GC,GP+y*GC,GR,gB[y][x]===1);if(gLast){cx.strokeStyle=gLast.p===1?"rgba(212,168,90,.95)":"rgba(200,120,120,.95)";cx.lineWidth=2;cx.beginPath();cx.arc(GP+gLast.x*GC,GP+gLast.y*GC,GR+4,0,Math.PI*2);cx.stroke()}}\n';
+  // drawGo
+  html+='function drawGo(){cx.drawImage(makeWT(GOSZ,GOSZ,54321),0,0);cx.strokeStyle="rgba(60,42,20,.6)";cx.lineWidth=1.5;cx.strokeRect(GOP-8,GOP-8,(GSZ-1)*GOC+16,(GSZ-1)*GOC+16);cx.strokeStyle="#4a3d2f";cx.lineWidth=.7;for(var i=0;i<GSZ;i++){cx.beginPath();cx.moveTo(GOP+i*GOC,GOP);cx.lineTo(GOP+i*GOC,GOP+(GSZ-1)*GOC);cx.stroke();cx.beginPath();cx.moveTo(GOP,GOP+i*GOC);cx.lineTo(GOP+(GSZ-1)*GOC,GOP+i*GOC);cx.stroke()}var sp=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];cx.fillStyle="#3a2d1f";for(var i=0;i<sp.length;i++){cx.beginPath();cx.arc(GOP+sp[i][0]*GOC,GOP+sp[i][1]*GOC,2.8,0,Math.PI*2);cx.fill()}for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++)if(goB[x][y]!==0)drawBall(GOP+x*GOC,GOP+y*GOC,GOR,goB[x][y]===1);if(goLast&&goB[goLast.x][goLast.y]===goLast.c){cx.strokeStyle=goLast.c===1?"rgba(212,168,90,.95)":"rgba(200,120,120,.95)";cx.lineWidth=2;cx.beginPath();cx.arc(GOP+goLast.x*GOC,GOP+goLast.y*GOC,7,0,Math.PI*2);cx.stroke()}cx.fillStyle="#6b5d4f";cx.font="bold 9px Georgia,serif";cx.textAlign="center";cx.textBaseline="middle";var L="ABCDEFGHJKLMNOPQRST";for(var i=0;i<GSZ;i++){cx.fillText(L[i],GOP+i*GOC,GOP-16);cx.fillText(String(GSZ-i),GOP-16,GOP+i*GOC)}}\n';
+  // drawXQ
+  html+='function xqRedP(p){return p>=1&&p<=7}\n';
+  html+='function drawXQP(px,py,p){var red=xqRedP(p),r=24;cx.save();cx.shadowColor="rgba(0,0,0,.45)";cx.shadowBlur=8;cx.shadowOffsetX=2;cx.shadowOffsetY=4;var bg=cx.createRadialGradient(px-r*.3,py-r*.3,r*.1,px+r*.05,py+r*.05,r*1.05);bg.addColorStop(0,"#fff8e8");bg.addColorStop(.2,"#f5e4b8");bg.addColorStop(.5,"#e8cc88");bg.addColorStop(.8,"#d4b060");bg.addColorStop(1,"#b8923c");cx.fillStyle=bg;cx.beginPath();cx.arc(px,py,r,0,Math.PI*2);cx.fill();cx.restore();cx.strokeStyle="#8a6428";cx.lineWidth=1.5;cx.beginPath();cx.arc(px,py,r-0.5,0,Math.PI*2);cx.stroke();cx.strokeStyle=red?"rgba(154,48,48,.65)":"rgba(40,35,30,.65)";cx.lineWidth=1.2;cx.beginPath();cx.arc(px,py,r-3,0,Math.PI*2);cx.stroke();cx.strokeStyle=red?"rgba(154,48,48,.35)":"rgba(40,35,30,.35)";cx.lineWidth=.8;cx.beginPath();cx.arc(px,py,r-5.5,0,Math.PI*2);cx.stroke();cx.textAlign="center";cx.textBaseline="middle";cx.fillStyle="rgba(0,0,0,.15)";cx.font="900 22px \\"Noto Serif SC\\",\\"Songti SC\\",\\"SimSun\\",serif";cx.fillText(XC_H[p],px+1,py+2);cx.fillStyle=red?"#b82828":"#1c1815";cx.fillText(XC_H[p],px,py+1);cx.save();cx.globalAlpha=.15;cx.fillStyle="#fff";cx.fillText(XC_H[p],px-0.5,py-0.5);cx.restore()}\n';
+  html+='function drawXQ(){cx.drawImage(makeWT(XW,XH,98765),0,0);cx.strokeStyle="#5c4a32";cx.lineWidth=2.5;cx.strokeRect(XP-10,XP-10,8*XC+20,9*XC+20);cx.strokeStyle="rgba(92,74,50,.5)";cx.lineWidth=1;cx.strokeRect(XP-5,XP-5,8*XC+10,9*XC+10);cx.lineWidth=1;cx.strokeStyle="#5c4a32";for(var c=0;c<9;c++){if(c===0||c===8){cx.beginPath();cx.moveTo(XP+c*XC,XP);cx.lineTo(XP+c*XC,XP+9*XC);cx.stroke()}else{cx.beginPath();cx.moveTo(XP+c*XC,XP);cx.lineTo(XP+c*XC,XP+4*XC);cx.stroke();cx.beginPath();cx.moveTo(XP+c*XC,XP+5*XC);cx.lineTo(XP+c*XC,XP+9*XC);cx.stroke()}}for(var rr=0;rr<10;rr++){cx.beginPath();cx.moveTo(XP,XP+rr*XC);cx.lineTo(XP+8*XC,XP+rr*XC);cx.stroke()}cx.lineWidth=.9;cx.beginPath();cx.moveTo(XP+3*XC,XP);cx.lineTo(XP+5*XC,XP+2*XC);cx.moveTo(XP+5*XC,XP);cx.lineTo(XP+3*XC,XP+2*XC);cx.moveTo(XP+3*XC,XP+7*XC);cx.lineTo(XP+5*XC,XP+9*XC);cx.moveTo(XP+5*XC,XP+7*XC);cx.lineTo(XP+3*XC,XP+9*XC);cx.stroke();cx.fillStyle="rgba(60,45,25,.5)";cx.font="600 22px \\"Noto Serif SC\\",\\"Songti SC\\",\\"SimSun\\",serif";cx.textAlign="center";cx.textBaseline="middle";cx.fillText("楚  河",XP+2*XC,XP+4.5*XC);cx.fillText("漢  界",XP+6*XC,XP+4.5*XC);for(var rr2=0;rr2<10;rr2++)for(var c2=0;c2<9;c2++)if(xqB[rr2][c2]!==0)drawXQP(XP+c2*XC,XP+rr2*XC,xqB[rr2][c2]);if(xqSel){cx.strokeStyle="rgba(200,140,50,.85)";cx.lineWidth=3;cx.beginPath();cx.arc(XP+xqSel[1]*XC,XP+xqSel[0]*XC,25,0,Math.PI*2);cx.stroke()}}\n';
+  // goTry (simplified for replay)
+  html+='function goNb(x,y){var r=[];if(x>0)r.push([x-1,y]);if(x<GSZ-1)r.push([x+1,y]);if(y>0)r.push([x,y-1]);if(y<GSZ-1)r.push([x,y+1]);return r}\n';
+  html+='function goGrp(b,x,y){var c=b[x][y];if(c===0)return{stones:[],liberties:[]};var vis={},st=[],lb={},q=[[x,y]];vis[x*GSZ+y]=true;while(q.length>0){var cu=q.shift(),cx2=cu[0],cy2=cu[1];st.push([cx2,cy2]);var ns=goNb(cx2,cy2);for(var i=0;i<ns.length;i++){var nx=ns[i][0],ny=ns[i][1],k=nx*GSZ+ny;if(b[nx][ny]===0)lb[k]=true;else if(b[nx][ny]===c&&!vis[k]){vis[k]=true;q.push([nx,ny])}}}return{stones:st,liberties:Object.keys(lb)}}\n';
+  html+='function goTry(b,x,y,c,ko){if(b[x][y]!==0)return{valid:false};if(ko&&ko[0]===x&&ko[1]===y)return{valid:false};var nb=b.map(function(r){return r.slice()});nb[x][y]=c;var opp=c===1?2:1;var captured=[];var ns=goNb(x,y);for(var i=0;i<ns.length;i++){var nx=ns[i][0],ny=ns[i][1];if(nb[nx][ny]===opp){var g=goGrp(nb,nx,ny);if(g.liberties.length===0){for(var j=0;j<g.stones.length;j++){nb[g.stones[j][0]][g.stones[j][1]]=0;captured.push(g.stones[j])}}}}var sg=goGrp(nb,x,y);if(sg.liberties.length===0)return{valid:false};var newKo=null;if(captured.length===1&&sg.stones.length===1){newKo=captured[0]}return{valid:true,newBoard:nb,newKo:newKo,captured:captured}}\n';
+  // xqInitBoard
+  html+='function xqInitBoard(){return [[12,11,10,9,8,9,10,11,12],[0,0,0,0,0,0,0,0,0],[0,13,0,0,0,0,0,13,0],[14,0,14,0,14,0,14,0,14],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[7,0,7,0,7,0,7,0,7],[0,6,0,0,0,0,0,6,0],[0,0,0,0,0,0,0,0,0],[5,4,3,2,1,2,3,4,5]]}\n';
+  // 初始化
+  html+='function initBoard(){cv=document.getElementById("board");cx=cv.getContext("2d");if(RD.game==="gomoku"){cv.width=GX;cv.height=GX;gB=[];for(var i=0;i<GS;i++)gB.push(new Array(GS).fill(0));gLast=null;drawGomoku()}else if(RD.game==="go"){cv.width=GOSZ;cv.height=GOSZ;goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));goLast=null;goKo=null;drawGo()}else if(RD.game==="xq"){cv.width=XW;cv.height=XH;xqB=xqInitBoard();xqSel=null;drawXQ()}}\n';
+  // 回放控制
+  html+='function updStep(){document.getElementById("step").textContent=rpStep2+"/"+RD.moves.length}\n';
+  html+='function rpStep(dir){if(dir===0){if(rpTimer){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8";return}if(rpStep2>=RD.moves.length)rpStep2=0;rpTimer=setInterval(function(){if(rpStep2>=RD.moves.length){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8";return}applyMove(rpStep2);rpStep2++;updStep()},800);document.getElementById("playbtn").textContent="\\u23f8 \\u6682\\u505c";return}if(rpTimer){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8"}if(dir>0&&rpStep2<RD.moves.length){applyMove(rpStep2);rpStep2++;updStep()}else if(dir<0&&rpStep2>0){rpStep2--;rebuildTo(rpStep2);updStep()}}\n';
+  html+='function applyMove(idx){var m=RD.moves[idx];if(RD.game==="gomoku"){gB[m.y][m.x]=m.p;gLast={x:m.x,y:m.y,p:m.p};drawGomoku()}else if(RD.game==="go"){var r=goTry(goB,m.x,m.y,m.c,goKo);if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:m.x,y:m.y,c:m.c};drawGo()}}else if(RD.game==="xq"){xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0;xqSel=[m.tr,m.tc];drawXQ();xqSel=null}}\n';
+  html+='function rebuildTo(step){if(RD.game==="gomoku"){gB=[];for(var i=0;i<GS;i++)gB.push(new Array(GS).fill(0));gLast=null;for(var i=0;i<step;i++){var m=RD.moves[i];gB[m.y][m.x]=m.p}if(step>0){var lm=RD.moves[step-1];gLast={x:lm.x,y:lm.y,p:lm.p}}drawGomoku()}else if(RD.game==="go"){goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));goLast=null;goKo=null;for(var i=0;i<step;i++){var m=RD.moves[i];var r=goTry(goB,m.x,m.y,m.c,goKo);if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:m.x,y:m.y,c:m.c}}}drawGo()}else if(RD.game==="xq"){xqB=xqInitBoard();xqSel=null;for(var i=0;i<step;i++){var m=RD.moves[i];xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0}if(step>0){var lm=RD.moves[step-1];xqSel=[lm.tr,lm.tc]}drawXQ();xqSel=null}}\n';
+  // 启动
+  html+='initBoard();\n';
+  html+='<\/script>\n';
+  html+='</body>\n</html>';
+  // 下载
+  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download=r.name+'_'+r.date.replace(/[:\s]/g,'-')+'.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){URL.revokeObjectURL(url)},1000);
+}
 function enter(g){
   curGame=g;hideOver();showAIInfo('');
   $('entry').style.display='none';
@@ -2537,7 +2625,7 @@ document.body.insertAdjacentHTML('beforeend',
 '<div class="rp-viewer" id="rpviewer">'+
 '<div class="rp-vbox"><div class="rp-vtitle" id="rpvtitle"></div><div class="rp-vinfo" id="rpvinfo"></div>'+
 '<canvas id="rpbd" style="border-radius:var(--rl);box-shadow:0 2px 8px rgba(60,40,10,.15)"></canvas>'+
-'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button></div>'+
+'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
 '<button class="rp-close" style="width:auto" onclick="closeRPViewer()">退出回放</button></div></div>');
 </script>
 </body>
