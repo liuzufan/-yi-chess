@@ -4,7 +4,7 @@
 
 ### 五子棋 / 围棋 / 象棋 — 三合一 AI 棋类游戏
 
-[![Play Online](https://img.shields.io/badge/Play-Online-8b5e3c?style=for-the-badge)](https://yi-chess-liuzufan7.3481468325.workers.dev/)
+[![Play Online](https://img.shields.io/badge/Play-Online-8b5e3c?style=for-the-badge)](https://yi-chess007.pages.dev/)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/liuzufan/-yi-chess)
 [![License: MIT](https://img.shields.io/badge/License-MIT-5a7a52?style=for-the-badge)](LICENSE)
 
@@ -120,6 +120,12 @@
 - **AI 实时讲解** — 回放每一步时自动生成 AI 讲解（棋型分析、战术点评、吃子价值评估）
 - **下载 HTML** — 将棋谱导出为独立 HTML 文件，双击即可打开回放，可分享给好友
 
+### 棋手档案系统
+- **游客模式** — 直接对弈，体验完整，无任何标识差异
+- **棋手登录** — 支持中文/英文/数字 ID 注册，密码无限制
+- **线上战绩** — 登录后每局可保存战绩，查看总对局数、胜率、历史记录
+- **隐私保护** — 所有数据存储在本地浏览器，不上传服务器
+
 ### 视觉设计
 - **中式美学** — 宣纸质感棋盘、木质纹理、毛笔字风格棋子
 - **程序化纹理** — 木纹纹理用种子里程化生成，无图片依赖
@@ -133,8 +139,8 @@
 
 ### 在线试玩
 
-直接访问：**[https://yi-chess-liuzufan7.3481468325.workers.dev/](https://yi-chess-liuzufan7.3481468325.workers.dev/)**
-         ** https://liuzufan.github.io/-yi-chess/**
+直接访问：**[https://yi-chess007.pages.dev/](https://yi-chess007.pages.dev/)**
+
 ### 本地运行
 
 **方式一：直接打开**
