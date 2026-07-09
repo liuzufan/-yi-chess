@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Ma+Shan+Zheng&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--ink:#1c1917;--ink-s:#44403c;--ink-l:#78716c;--paper:#f5f0e6;--paper-w:#ebe3d2;--paper-d:#d9cdb4;--accent:#8b5e3c;--accent-s:#a47b5a;--red:#9a4444;--green:#5a7a52;--gold:#c9a84c;--serif:Georgia,'Noto Serif SC','Songti SC','SimSun','宋体',serif;--xqfont:'Noto Serif SC','Songti SC','SimSun','宋体',serif;--r:6px;--rl:14px}
+:root{--ink:#1c1917;--ink-s:#44403c;--ink-l:#78716c;--paper:#f5f0e6;--paper-w:#ebe3d2;--paper-d:#d9cdb4;--accent:#8b5e3c;--accent-s:#a47b5a;--accent2:#a8745a;--red:#9a4444;--green:#5a7a52;--gold:#c9a84c;--serif:Georgia,'Noto Serif SC','Songti SC','SimSun','宋体',serif;--xqfont:'Noto Serif SC','Songti SC','SimSun','宋体',serif;--r:6px;--rl:14px}
 body{background:var(--paper);background-image:radial-gradient(ellipse at 15% 10%,rgba(139,94,60,.05),transparent 60%),radial-gradient(ellipse at 85% 90%,rgba(139,94,60,.04),transparent 55%);min-height:100vh;display:flex;flex-direction:column;align-items:center;font-family:var(--serif);color:var(--ink);user-select:none;-webkit-tap-highlight-color:transparent;padding:16px 12px 40px}
 .entry{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:85vh;animation:fi .8s ease}
 @keyframes fi{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
@@ -106,8 +106,40 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .rp-vctl{display:flex;gap:8px;align-items:center}
 .rp-vctl button{padding:6px 16px}
 .rp-vstep{font-size:.75rem;color:var(--ink-s);min-width:60px;text-align:center}
-.rp-vcomment{background:var(--paper-w);border-radius:var(--rl);padding:10px 14px;margin-top:8px;font-size:.82rem;color:var(--ink);min-height:36px;max-width:560px;line-height:1.6}
+.rp-vcomment{background:var(--paper-w);border-radius:var(--rl);padding:10px 14px;margin-top:8px;font-size:.82rem;color:var(--ink);min-height:36px;max-width:560px;line-height:1.7}
+.rp-vcomment .rp-who{font-weight:600;font-size:.78rem;padding:2px 8px;border-radius:10px;margin-right:6px}
+.rp-vcomment .rp-human{background:rgba(58,122,90,.15);color:#2d6b4f}
+.rp-vcomment .rp-ai{background:rgba(200,130,30,.15);color:#a8651a}
+.rp-vcomment .rp-key{color:var(--accent);font-weight:600}
+.rp-vcomment .rp-val{color:#8b5e3c;font-weight:500}
 @media(max-width:640px){.entry h1{font-size:2.2rem;letter-spacing:12px;padding-left:12px}.card{width:170px;height:230px;padding:24px 16px}.card svg{width:56px;height:56px}.card .name{font-size:1rem;letter-spacing:5px}canvas{width:92vw!important;height:92vw!important}button{padding:6px 14px;font-size:.75rem}.nav .title{font-size:1rem;letter-spacing:5px}}
+/* 账户系统 */
+#acctModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(28,25,23,.5);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+#acctModal.show{display:flex}
+.acct-card{background:var(--paper-w);border-radius:16px;padding:36px 40px;max-width:400px;width:90vw;box-shadow:0 8px 32px rgba(60,40,10,.3);border:1px solid var(--paper-d)}
+.acct-title{font-size:1.4rem;font-weight:300;letter-spacing:8px;text-align:center;color:var(--accent);margin-bottom:24px}
+.acct-input{width:100%;padding:10px 14px;border:1px solid var(--paper-d);border-radius:8px;background:rgba(255,255,255,.6);font-size:.9rem;color:var(--ink);margin-bottom:12px;outline:none;transition:border-color .3s}
+.acct-input:focus{border-color:var(--accent)}
+.acct-btn{width:100%;padding:10px;border:none;border-radius:8px;font-size:.85rem;cursor:pointer;letter-spacing:3px;transition:all .3s;margin-bottom:8px}
+.acct-btn-primary{background:var(--accent);color:#fff}
+.acct-btn-primary:hover{background:var(--accent2)}
+.acct-btn-secondary{background:var(--paper-d);color:var(--ink)}
+.acct-btn-secondary:hover{background:var(--paper-l)}
+.acct-hint{text-align:center;font-size:.72rem;color:var(--ink-l);margin-top:8px;letter-spacing:1px}
+.acct-link{text-align:center;margin-top:16px}
+.acct-link a{color:var(--ink-l);font-size:.78rem;text-decoration:none;letter-spacing:1px;cursor:pointer}
+.acct-link a:hover{color:var(--accent)}
+.acct-stats{display:flex;justify-content:space-around;margin-bottom:20px;padding:16px;background:var(--paper-d);border-radius:8px}
+.acct-stat{text-align:center}
+.acct-stat-num{font-size:1.5rem;font-weight:300;color:var(--accent)}
+.acct-stat-label{font-size:.7rem;color:var(--ink-l);letter-spacing:1px;margin-top:4px}
+.acct-records{max-height:300px;overflow-y:auto;margin-bottom:16px}
+.acct-record{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--paper-d);font-size:.78rem}
+.acct-record:hover{background:var(--paper-d)}
+.acct-record-result{font-weight:600;padding:2px 8px;border-radius:4px}
+.acct-result-win{background:rgba(58,122,90,.15);color:#2d6b4f}
+.acct-result-lose{background:rgba(200,80,80,.15);color:#a04040}
+.acct-result-draw{background:rgba(120,113,108,.15);color:#57534e}
 </style>
 </head>
 <body>
@@ -126,7 +158,9 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 <div class="card" onclick="enter('xq')">
 <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1"><rect x="8" y="6" width="64" height="68" rx="2"/><line x1="8" y1="22" x2="72" y2="22"/><line x1="8" y1="58" x2="72" y2="58"/><line x1="22" y1="6" x2="22" y2="22"/><line x1="58" y1="6" x2="58" y2="22"/><line x1="22" y1="58" x2="22" y2="74"/><line x1="58" y1="58" x2="58" y2="74"/><path d="M22 22 L58 58 M58 22 L22 58" stroke-dasharray="2 3" opacity=".35"/><circle cx="40" cy="14" r="4" fill="none"/><circle cx="40" cy="66" r="4" fill="currentColor" opacity=".3"/></svg>
 <div class="name">象棋</div><div class="desc">楚河汉界<br>运筹帷幄</div></div>
-</div></div>
+</div>
+<div style="text-align:center;margin-top:20px"><a href="javascript:void(0)" onclick="openAccountModal()" id="acctLink" style="color:var(--ink-l);font-size:.8rem;text-decoration:none;letter-spacing:2px;border-bottom:1px solid var(--paper-d);padding-bottom:2px;transition:color .3s">棋手档案</a></div>
+</div>
 
 <div class="game" id="game">
 <div class="nav">
@@ -149,7 +183,7 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 <div class="it"><span class="si sw"></span><span id="p2">电脑</span></div>
 </div>
 <div class="wr-bar" id="wrbar" style="display:none">
-<div class="wr-label">胜率</div>
+<div class="wr-label">你的胜率</div>
 <div class="wr-track"><div class="wr-fill" id="wrfill" style="width:50%"></div></div>
 <div class="wr-pct" id="wrpct">50%</div>
 </div>
@@ -184,7 +218,7 @@ function saveS(){try{localStorage.setItem('gmk_s',JSON.stringify(stats))}catch(e
 function addS(r){if(r==='w')stats.w++;else if(r==='l')stats.l++;else stats.d++;saveS()}
 
 function $(id){return document.getElementById(id)}
-function showOver(t,tx,cls){over=true;var o=$('ov');$('ot').textContent=t;$('ot').className=cls;$('otx').textContent=tx;o.classList.add('show')}
+function showOver(t,tx,cls){over=true;var o=$('ov');$('ot').textContent=t;$('ot').className=cls;$('otx').textContent=tx;o.classList.add('show');askSaveOnlineRecord()}
 function hideOver(){over=false;$('ov').classList.remove('show')}
 function setDiff(d){
   curDiff=d;
@@ -209,10 +243,14 @@ function showWinRate(pct){
   $('wrfill').style.width=pct+'%';
   $('wrpct').textContent=pct+'%';
 }
-// 胜率计算: 将评估分数转为百分比
+// 胜率计算: 将评估分数转为百分比 (玩家视角)
 function scoreToWinRate(score){
-  // 使用sigmoid函数, score范围约 -1000000 ~ 1000000
-  var k=1/100000;
+  // 分段sigmoid: 大分(胜负)快速归一, 小分(局势)敏感反映
+  var abs=Math.abs(score);
+  var k;
+  if(abs>=100000)k=1/10000;      // 胜负级: 快速归0/100
+  else if(abs>=10000)k=1/3000;    // 大优/大劣: 高敏感
+  else k=1/1500;                  // 中盘: 最敏感
   var pct=1/(1+Math.exp(-score*k))*100;
   return pct;
 }
@@ -404,9 +442,12 @@ function rpStep(dir){
 function rpShowComment(idx, goCaptured){
   var el=$('rpvcomment');
   if(!el||!replayData)return;
-  if(idx<0){el.textContent='点击「下一步」开始回放，或按「自动」连续播放';return}
+  if(idx<0){el.innerHTML='点击「下一步」开始回放，或按「自动」连续播放';return}
   var m=replayData.moves[idx];
   var moveNum=idx+1;
+  // 判断这步是谁下的
+  var isHuman=rpIsHumanMove(idx);
+  var whoTag=isHuman?'<span class="rp-who rp-human">你</span>':'<span class="rp-who rp-ai">AI</span>';
   var cmt='';
   if(replayData.game==='gomoku'){
     cmt=rpGomokuComment(m,idx);
@@ -415,53 +456,92 @@ function rpShowComment(idx, goCaptured){
   }else if(replayData.game==='xq'){
     cmt=rpXQComment(m,idx);
   }
-  el.textContent='第'+moveNum+'手 · '+cmt;
+  el.innerHTML=whoTag+'<span class="rp-key">第'+moveNum+'手</span> · '+cmt;
+}
+// 判断这步棋是人类还是AI下的
+function rpIsHumanMove(idx){
+  var r=replayData;
+  var m=r.moves[idx];
+  if(r.game==='gomoku'||r.game==='go'){
+    var playerColor=r.playerFirst?1:2;
+    return m.p===playerColor||m.c===playerColor;
+  }else if(r.game==='xq'){
+    var playerIsRed=r.playerFirst;
+    var moverRed=m.piece>=1&&m.piece<=7;
+    return playerIsRed===moverRed;
+  }
+  return true;
 }
 // 五子棋讲解
 function rpGomokuComment(m,idx){
   var x=m.x,y=m.y,p=m.p,opp=3-p;
-  // 检查己方形成的棋型 (gPatCount将中心点视为己方棋子,无需修改棋盘)
   var pc=gPatCount(gB,x,y,p);
-  if(pc.FIVE>0)return'胜负手！连五成局';
-  if(pc.LIVE_FOUR>0)return'妙手！形成活四，下一手必胜';
-  if(pc.RUSH_FOUR>=2)return'强攻！双冲四威胁，下一手必胜';
-  if(pc.RUSH_FOUR>0)return'进攻！冲四威胁，对手必须防守';
-  if(pc.LIVE_THREE>=2)return'强力进攻！双活三成型';
-  if(pc.LIVE_THREE>0)return'形成活三，持续施压';
+  if(pc.FIVE>0)return'<span class="rp-key">胜负手！</span>连五成局，一击制胜';
+  if(pc.LIVE_FOUR>0)return'<span class="rp-key">妙手！</span>形成活四，下一手即可连五';
+  if(pc.RUSH_FOUR>=2)return'<span class="rp-key">强攻！</span>双冲四成型，对手无法兼顾';
+  if(pc.RUSH_FOUR>0)return'<span class="rp-key">进攻</span>冲四威胁，对手必须应一手';
+  if(pc.LIVE_THREE>=2)return'<span class="rp-key">强力进攻！</span>双活三交叉，攻势凌厉';
+  if(pc.LIVE_THREE>0&&pc.LIVE_TWO>0)return'<span class="rp-key">扩展</span>活三带活二，形势大好';
+  if(pc.LIVE_THREE>0)return'形成活三，持续向对手施压';
+  if(pc.SLEEP_THREE>0&&pc.LIVE_TWO>0)return'埋伏一手，眠三带活二伺机而动';
   if(pc.SLEEP_THREE>0)return'埋伏一手，眠三待发';
+  if(pc.LIVE_TWO>=2)return'稳健布局，双活二展开阵势';
   if(pc.LIVE_TWO>0)return'稳健布局，形成活二';
-  // 检查是否防守对方威胁 (gPatCount将中心点视为对方棋子)
+  // 检查是否防守对方威胁
   var opc=gPatCount(gB,x,y,opp);
-  if(opc.FIVE>0)return'关键防守！化解对方连五';
-  if(opc.LIVE_FOUR>0||opc.RUSH_FOUR>=2)return'稳妥防守，化解对方活四攻势';
-  if(opc.RUSH_FOUR>0)return'稳妥防守，化解对方冲四威胁';
-  if(opc.LIVE_THREE>=2)return'防守！化解对方双活三';
+  if(opc.FIVE>0)return'<span class="rp-key">关键防守！</span>化解对方连五杀棋';
+  if(opc.LIVE_FOUR>0||opc.RUSH_FOUR>=2)return'<span class="rp-key">稳妥防守</span>化解对方活四攻势';
+  if(opc.RUSH_FOUR>0)return'稳妥防守，封堵对方冲四';
+  if(opc.LIVE_THREE>=2)return'<span class="rp-key">防守！</span>化解对方双活三威胁';
   if(opc.LIVE_THREE>0)return'稳妥防守，化解对方攻势';
-  // 开局定式
-  if(idx<6)return'开局定式：第'+(idx+1)+'手布阵';
-  return'正常布局';
+  // 开局阶段
+  if(idx<4)return'开局布阵，占据天元要位';
+  if(idx<8)return'开局定式，展开角部争夺';
+  if(idx<14)return'中盘过渡，积蓄攻防力量';
+  // 判断是否接触战
+  var nearOpp=false;
+  for(var dx=-1;dx<=1&&!nearOpp;dx++)for(var dy=-1;dy<=1;dy++){
+    var nx=x+dx,ny=y+dy;
+    if(nx>=0&&nx<GS&&ny>=0&&ny<GS&&gB[ny][nx]===opp){nearOpp=true;break}
+  }
+  if(nearOpp)return'接触战，紧逼对方棋形';
+  return'正常布局，拓展势力范围';
 }
 // 围棋讲解
 function rpGoComment(m,idx,goCaptured){
   var x=m.x,y=m.y;
-  // 提子
-  if(goCaptured&&goCaptured>0)return'提子！吃掉对方'+goCaptured+'子';
-  // 检查move数据中是否有提子信息
-  if(m.cap&&m.cap.length>0)return'提子！吃掉对方'+m.cap.length+'子';
+  var capCount=goCaptured||(m.cap?m.cap.length:0);
+  if(capCount>0)return'<span class="rp-key">提子！</span>吃掉对方<span class="rp-val">'+capCount+'子</span>，收获颇丰';
   // 角部定式 (四角区域, 前12手)
   var isCorner=(x<=5&&y<=5)||(x<=5&&y>=13)||(x>=13&&y<=5)||(x>=13&&y>=13);
-  if(isCorner&&idx<12)return'角部定式';
+  if(isCorner&&idx<12)return'角部定式，抢占根据地';
   // 抢占大场 (边路, 前20手)
   var isSide=(x<=2||x>=16||y<=2||y>=16);
-  if(isSide&&idx<20)return'抢占大场';
+  if(isSide&&idx<20)return'抢占大场，扩展边路势力';
+  // 中腹
+  var isCenter=(x>=7&&x<=11&&y>=7&&y<=11);
+  if(isCenter&&idx<16)return'中腹布局，着眼全局厚薄';
   // 防守: 附近有对方棋子
   var opp=m.c===1?2:1,nearOpp=false;
   for(var dx=-2;dx<=2&&!nearOpp;dx++)for(var dy=-2;dy<=2;dy++){
     var nx=x+dx,ny=y+dy;
     if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ&&goB[nx][ny]===opp){nearOpp=true;break}
   }
-  if(nearOpp)return'稳健防守';
-  return'正常行棋';
+  if(nearOpp){
+    // 检查是否攻击或防守
+    var myCount=0,oppCount=0;
+    for(var dx2=-1;dx2<=1;dx2++)for(var dy2=-1;dy2<=1;dy2++){
+      var nx2=x+dx2,ny2=y+dy2;
+      if(nx2>=0&&nx2<GSZ&&ny2>=0&&ny2<GSZ){
+        if(goB[nx2][ny2]===m.c)myCount++;
+        else if(goB[nx2][ny2]===opp)oppCount++;
+      }
+    }
+    if(oppCount>myCount)return'防守一手，巩固己方薄弱棋形';
+    return'攻防兼备，接触对方棋形';
+  }
+  if(idx<30)return'稳健行棋，积蓄全局厚势';
+  return'正常行棋，伺机而动';
 }
 // 象棋讲解
 function rpXQComment(m,idx){
@@ -470,15 +550,33 @@ function rpXQComment(m,idx){
   if(m.captured&&m.captured!==0){
     var capName=XC_H[m.captured]||'棋子';
     var capVal=XV[m.captured]||0;
-    return'吃掉对方'+capName+'，获利'+capVal+'分';
+    var valText=capVal>=900?'<span class="rp-key">主力</span>':capVal>=400?'<span class="rp-val">大子</span>':'<span class="rp-val">小子</span>';
+    return'<span class="rp-key">吃子！</span>吃掉对方'+capName+'（'+valText+'），获利'+capVal+'分';
   }
-  // 将军检查: 移动方是xqRedP(m.piece), 对方被将军
+  // 将军检查
   var moverRed=xqRedP(m.piece);
   var oppRed=!moverRed;
-  if(xqCheck(xqB,oppRed))return'将军！';
-  // 开局库
-  if(moveNum<=8)return'开局库：第'+moveNum+'手';
-  return'正常出子';
+  if(xqCheck(xqB,oppRed))return'<span class="rp-key">将军！</span>迫使对方应将';
+  // 开局阶段
+  if(moveNum<=4)return'开局出子，展开阵型';
+  if(moveNum<=8)return'开局库定式，抢占要道';
+  if(moveNum<=12)return'中局过渡，调兵遣将';
+  // 判断棋子类型给出点评
+  var pieceName=XC_H[m.piece]||'棋子';
+  // 检查是否过河
+  var crossedRiver=moverRed?(m.tr<5):(m.tr>4);
+  if(crossedRiver&&(m.piece===7||m.piece===14))return'<span class="rp-key">过河兵！</span>兵卒过河，威胁增大';
+  if((m.piece===6||m.piece===13)&&idx>10){
+    // 炮的点评
+    var hasTarget=false;
+    for(var c=0;c<9&&!hasTarget;c++)for(var r=0;r<10;r++){
+      if(xqB[r][c]!==0&&(r!==m.tr||c!==m.tc))hasTarget=true;
+    }
+    return'炮的机动，远程威胁对方阵型';
+  }
+  if((m.piece===11||m.piece===4)&&idx>8)return'马跃要位，控制关键格子';
+  if((m.piece===12||m.piece===5)&&idx>8)return'车出动，控制要道';
+  return'正常出子，'+pieceName+'调动';
 }
 function rpApplyMove(idx){
   var m=replayData.moves[idx];
@@ -1340,7 +1438,7 @@ function gAIMove(){
   if(bs>800000)info+=' [优势]';
   else if(bs<-800000)info+=' [劣势]';
   showAIInfo(info);
-  // 显示胜率 (AI视角,反转给玩家看)
+  // 显示胜率: bs是AI视角分数, 转为玩家胜率显示
   var wr=scoreToWinRate(bs);
   showWinRate(playerFirst?(100-wr):wr);
   return best;
@@ -2006,7 +2104,7 @@ function goMCTS(b,c,ko,onMCTSResult){
       info+=' 胜率'+aiWr.toFixed(1)+'%';
     }
     showAIInfo(info);
-    // 显示玩家胜率 (AI胜率反转)
+    // 显示玩家胜率 (AI模拟胜率反转)
     showWinRate(100-aiWr);
     onMCTSResult(bn?{move:bn.move}:null);
   }
@@ -2758,6 +2856,188 @@ document.body.insertAdjacentHTML('beforeend',
 '<div id="rpvcomment" class="rp-vcomment"></div>'+
 '<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><select id="rpspeed" onchange="rpSetSpeed(this.value)" style="padding:5px 8px;font-size:.75rem;border:1px solid var(--paper-d);border-radius:var(--r);background:var(--paper-w);color:var(--ink-s);font-family:var(--serif)"><option value="1600">0.5x</option><option value="800" selected>1x</option><option value="400">2x</option><option value="200">4x</option></select><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
 '<button class="rp-close" style="width:auto" onclick="closeRPViewer()">退出回放</button></div></div>');
+
+// ============================================================
+//  账户系统 — 棋手档案 / 登录注册 / 战绩记录
+// ============================================================
+var yiCurrentUser=null; // 当前登录用户ID
+
+function getAccounts(){
+  try{return JSON.parse(localStorage.getItem('yi_chess_accounts')||'{}')}catch(e){return{}}
+}
+function saveAccounts(obj){
+  try{localStorage.setItem('yi_chess_accounts',JSON.stringify(obj))}catch(e){}
+}
+function loadCurrentUser(){
+  yiCurrentUser=localStorage.getItem('yi_chess_current')||null;
+  updateAcctLink();
+}
+function updateAcctLink(){
+  var link=$('acctLink');
+  if(!link)return;
+  if(yiCurrentUser){
+    link.textContent='棋手：'+yiCurrentUser+'的战绩';
+  }else{
+    link.textContent='棋手档案';
+  }
+}
+function openAccountModal(){
+  var modal=$('acctModal');
+  if(yiCurrentUser){
+    showRecordsView();
+  }else{
+    showLoginView();
+  }
+  modal.className='show';
+}
+function closeAccountModal(){
+  $('acctModal').className='';
+}
+function showLoginView(){
+  var html='<div class="acct-card">'+
+    '<div class="acct-title">棋手登录</div>'+
+    '<input class="acct-input" id="loginId" placeholder="输入棋手ID" maxlength="20">'+
+    '<input class="acct-input" id="loginPw" type="password" placeholder="输入密码">'+
+    '<button class="acct-btn acct-btn-primary" onclick="doLogin()">登 录</button>'+
+    '<button class="acct-btn acct-btn-secondary" onclick="showRegisterView()">注册新棋手</button>'+
+    '<div class="acct-link"><a onclick="closeAccountModal()">暂不登录，直接对弈</a></div>'+
+    '<div class="acct-hint">棋手ID支持中文、英文、数字</div>'+
+    '</div>';
+  $('acctModalContent').innerHTML=html;
+}
+function showRegisterView(){
+  var html='<div class="acct-card">'+
+    '<div class="acct-title">注册棋手</div>'+
+    '<input class="acct-input" id="regId" placeholder="设置棋手ID" maxlength="20">'+
+    '<input class="acct-input" id="regPw" type="password" placeholder="设置密码">'+
+    '<input class="acct-input" id="regPw2" type="password" placeholder="确认密码">'+
+    '<button class="acct-btn acct-btn-primary" onclick="doRegister()">注 册</button>'+
+    '<button class="acct-btn acct-btn-secondary" onclick="showLoginView()">返回登录</button>'+
+    '<div class="acct-hint">棋手ID支持中文、英文、数字</div>'+
+    '</div>';
+  $('acctModalContent').innerHTML=html;
+}
+function doLogin(){
+  var id=$('loginId').value.trim();
+  var pw=$('loginPw').value;
+  if(!id){alert('请输入棋手ID');return}
+  var accounts=getAccounts();
+  if(!accounts[id]){alert('该棋手ID未注册');return}
+  if(accounts[id].password!==pw){alert('密码错误');return}
+  yiCurrentUser=id;
+  localStorage.setItem('yi_chess_current',id);
+  updateAcctLink();
+  showRecordsView();
+}
+function doRegister(){
+  var id=$('regId').value.trim();
+  var pw=$('regPw').value;
+  var pw2=$('regPw2').value;
+  if(!id){alert('请输入棋手ID');return}
+  if(!pw){alert('请输入密码');return}
+  if(pw!==pw2){alert('两次密码不一致');return}
+  var accounts=getAccounts();
+  if(accounts[id]){alert('该棋手ID已被注册');return}
+  accounts[id]={password:pw,records:[]};
+  saveAccounts(accounts);
+  yiCurrentUser=id;
+  localStorage.setItem('yi_chess_current',id);
+  updateAcctLink();
+  showRecordsView();
+}
+function doLogout(){
+  yiCurrentUser=null;
+  localStorage.removeItem('yi_chess_current');
+  updateAcctLink();
+  closeAccountModal();
+}
+function showRecordsView(){
+  var accounts=getAccounts();
+  var user=accounts[yiCurrentUser];
+  if(!user){doLogout();return}
+  var records=user.records||[];
+  var wins=0,losses=0,draws=0;
+  for(var i=0;i<records.length;i++){
+    if(records[i].result==='win')wins++;
+    else if(records[i].result==='lose')losses++;
+    else draws++;
+  }
+  var total=records.length;
+  var wr=total>0?Math.round(wins/total*100):0;
+  var names={gomoku:'五子棋',go:'围棋',xq:'象棋'};
+  var diffs=['','入门','进阶','高手','大师'];
+  var html='<div class="acct-card" style="max-width:480px">'+
+    '<div class="acct-title">棋手：'+yiCurrentUser+'</div>'+
+    '<div class="acct-stats">'+
+    '<div class="acct-stat"><div class="acct-stat-num">'+total+'</div><div class="acct-stat-label">总对局</div></div>'+
+    '<div class="acct-stat"><div class="acct-stat-num" style="color:#2d6b4f">'+wins+'</div><div class="acct-stat-label">胜场</div></div>'+
+    '<div class="acct-stat"><div class="acct-stat-num" style="color:#a04040">'+losses+'</div><div class="acct-stat-label">负场</div></div>'+
+    '<div class="acct-stat"><div class="acct-stat-num">'+wr+'%</div><div class="acct-stat-label">胜率</div></div>'+
+    '</div>';
+  if(records.length===0){
+    html+='<div style="text-align:center;color:var(--ink-l);font-size:.82rem;padding:20px 0">暂无对局记录</div>';
+  }else{
+    html+='<div class="acct-records">';
+    for(var i=0;i<records.length;i++){
+      var r=records[i];
+      var resultText=r.result==='win'?'胜':r.result==='lose'?'负':'平';
+      var resultClass=r.result==='win'?'acct-result-win':r.result==='lose'?'acct-result-lose':'acct-result-draw';
+      html+='<div class="acct-record">'+
+        '<span>'+r.date+'</span>'+
+        '<span>'+(names[r.game]||r.game)+'</span>'+
+        '<span>'+(diffs[r.diff]||'')+'</span>'+
+        '<span class="acct-record-result '+resultClass+'">'+resultText+'</span>'+
+        '<span>'+r.moves+'手</span>'+
+        '</div>';
+    }
+    html+='</div>';
+  }
+  html+='<button class="acct-btn acct-btn-secondary" onclick="doLogout()">退出登录</button>'+
+    '<button class="acct-btn acct-btn-primary" onclick="closeAccountModal()">关 闭</button>'+
+    '</div>';
+  $('acctModalContent').innerHTML=html;
+}
+// 保存战绩到在线账户
+function saveRecordToAccount(){
+  if(!yiCurrentUser)return;
+  var accounts=getAccounts();
+  var user=accounts[yiCurrentUser];
+  if(!user)return;
+  var result='';
+  if(over){
+    var ot=$('ot').className;
+    if(ot==='win')result='win';
+    else if(ot==='lose')result='lose';
+    else result='draw';
+  }else{
+    result='unfinished';
+  }
+  var movesCount=0;
+  if(curGame==='gomoku')movesCount=gH.length;
+  else if(curGame==='go')movesCount=goHist.length;
+  else if(curGame==='xq')movesCount=xqHist.length;
+  var now=new Date();
+  var dateStr=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+  var names={gomoku:'五子棋',go:'围棋',xq:'象棋'};
+  user.records=user.records||[];
+  user.records.unshift({date:dateStr,game:curGame,name:names[curGame],result:result,diff:curDiff,moves:movesCount,playerFirst:playerFirst});
+  if(user.records.length>200)user.records=user.records.slice(0,200);
+  accounts[yiCurrentUser]=user;
+  saveAccounts(accounts);
+}
+// 游戏结束后询问保存战绩（未登录则静默跳过）
+function askSaveOnlineRecord(){
+  if(!yiCurrentUser)return; // 未登录不询问，游客体验无差别
+  if(!over)return;
+  setTimeout(function(){
+    if(confirm('是否保存本次战绩到棋手档案？')){
+      saveRecordToAccount();
+    }
+  },500);
+}
+
+loadCurrentUser();
 </script>
+<div id="acctModal"><div id="acctModalContent"></div></div>
 </body>
 </html>
