@@ -512,24 +512,28 @@ function rpShowComment(idx, goCaptured){
   var html=whoTag+cmt;
   if(suggestion){
     html+='<br><span style="color:#8b5e3c;font-size:.76rem;margin-top:4px;display:inline-block">💡 '+suggestion.text+'</span>';
-    // 在棋盘上绘制透明闪烁建议棋子
+    // 在棋盘上绘制: 玩家实际落子半透明 + AI建议位置闪烁
     if(suggestion.x!==undefined){
-      rpHasSuggestion=true; // 标记当前步有AI建议, 自动播放时需等待闪烁完成
-      rpDrawSuggestion(suggestion.x, suggestion.y, suggestion.isOpp, suggestion);
+      rpHasSuggestion=true;
+      // 获取玩家实际落子位置
+      var actualMove=null;
+      if(replayData.game==='gomoku'){actualMove={x:m.x,y:m.y}}
+      else if(replayData.game==='go'){actualMove={x:m.x,y:m.y}}
+      else if(replayData.game==='xq'){actualMove={x:m.tc,y:m.tr}}
+      rpDrawSuggestion(suggestion.x, suggestion.y, false, suggestion, actualMove);
     }
   }
   el.innerHTML=html;
 }
-// 在回放棋盘上绘制透明闪烁建议棋子
+// 在回放棋盘上绘制: 玩家实际落子半透明 + AI建议位置闪烁对比
 var rpSuggestTimer=null;
-function rpDrawSuggestion(x, y, isOpp, sugg){
+function rpDrawSuggestion(x, y, isOpp, sugg, actualMove){
   if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
   var blinkOn=true;
   var start=Date.now();
   rpSuggestTimer=setInterval(function(){
-    if(Date.now()-start>3000){ // 3秒后停止
+    if(Date.now()-start>3000){
       clearInterval(rpSuggestTimer);rpSuggestTimer=null;
-      // 重绘当前棋盘状态(去掉闪烁棋子)
       if(replayData.game==='gomoku')drawGomoku();
       else if(replayData.game==='go')drawGo();
       else if(replayData.game==='xq')drawXQ();
@@ -539,54 +543,88 @@ function rpDrawSuggestion(x, y, isOpp, sugg){
     if(replayData.game==='gomoku')drawGomoku();
     else if(replayData.game==='go')drawGo();
     else if(replayData.game==='xq')drawXQ();
-    // 绘制半透明建议标记
+
+    // 1. 将玩家实际落子变为半透明(覆盖一层半透明背景色)
+    if(actualMove){
+      cx.save();
+      cx.globalAlpha=0.35;
+      if(replayData.game==='gomoku'){
+        var acX=GP+actualMove.x*GC, acY=GP+actualMove.y*GC;
+        // 用背景色覆盖实际落子, 使其变淡
+        cx.fillStyle='#e8dcc8';
+        cx.beginPath();cx.arc(acX,acY,GR,0,Math.PI*2);cx.fill();
+        // 画一个虚线圆标记这是"你的落子"
+        cx.globalAlpha=0.5;
+        cx.strokeStyle='#999';
+        cx.lineWidth=1.5;
+        cx.setLineDash([3,2]);
+        cx.beginPath();cx.arc(acX,acY,GR-2,0,Math.PI*2);cx.stroke();
+      }else if(replayData.game==='go'){
+        var gAcX=GOP+actualMove.x*GOC, gAcY=GOP+actualMove.y*GOC;
+        cx.fillStyle='#e8dcc8';
+        cx.beginPath();cx.arc(gAcX,gAcY,GOR,0,Math.PI*2);cx.fill();
+        cx.globalAlpha=0.5;
+        cx.strokeStyle='#999';
+        cx.lineWidth=1.5;
+        cx.setLineDash([3,2]);
+        cx.beginPath();cx.arc(gAcX,gAcY,GOR-2,0,Math.PI*2);cx.stroke();
+      }else if(replayData.game==='xq'){
+        var xqCW=XW/9, xqCH=XH/10;
+        var xpX=3+xqCW/2+actualMove.x*xqCW, xpY=3+xqCH/2+actualMove.y*xqCH;
+        cx.fillStyle='#e8dcc8';
+        cx.beginPath();cx.arc(xpX,xpY,xqCW*0.38,0,Math.PI*2);cx.fill();
+        cx.globalAlpha=0.5;
+        cx.strokeStyle='#999';
+        cx.lineWidth=1.5;
+        cx.setLineDash([3,2]);
+        cx.beginPath();cx.arc(xpX,xpY,xqCW*0.35,0,Math.PI*2);cx.stroke();
+      }
+      cx.restore();
+    }
+
+    // 2. 绘制AI建议位置(闪烁, 实心, 形成对比)
     if(blinkOn){
       cx.save();
-      cx.globalAlpha=0.4;
+      // 五子棋和围棋: 画实心建议棋子
       if(replayData.game==='gomoku'){
         var playerColor=replayData.playerFirst?1:2;
-        var suggColor=isOpp?(playerColor===1?2:1):playerColor;
-        drawBall(GP+x*GC, GP+y*GC, GR, suggColor===1);
+        cx.globalAlpha=0.85;
+        drawBall(GP+x*GC, GP+y*GC, GR, playerColor===1);
       }else if(replayData.game==='go'){
         var goPlayerColor=replayData.playerFirst?1:2;
-        var goSuggColor=isOpp?(goPlayerColor===1?2:1):goPlayerColor;
-        drawBall(GOP+x*GOC, GOP+y*GOC, GOR, goSuggColor===1);
+        cx.globalAlpha=0.85;
+        drawBall(GOP+x*GOC, GOP+y*GOC, GOR, goPlayerColor===1);
       }else if(replayData.game==='xq'){
-        // 象棋: 在目标位置画半透明圆圈
         var xqCellW=XW/9, xqCellH=XH/10;
         var px=3+xqCellW/2+x*xqCellW;
         var py=3+xqCellH/2+y*xqCellH;
-        cx.fillStyle=isOpp?'rgba(200,80,80,.4)':'rgba(58,122,90,.4)';
+        cx.fillStyle='rgba(58,122,90,.5)';
         cx.beginPath();
         cx.arc(px,py,xqCellW*0.35,0,Math.PI*2);
         cx.fill();
-        // 如果有起始位置，画箭头
         if(sugg&&sugg.fromX!==undefined){
           var fx=3+xqCellW/2+sugg.fromX*xqCellW;
           var fy=3+xqCellH/2+sugg.fromY*xqCellH;
-          cx.strokeStyle=isOpp?'rgba(200,80,80,.5)':'rgba(58,122,90,.5)';
+          cx.strokeStyle='rgba(58,122,90,.6)';
           cx.lineWidth=2;
           cx.setLineDash([3,2]);
-          cx.beginPath();
-          cx.moveTo(fx,fy);
-          cx.lineTo(px,py);
-          cx.stroke();
+          cx.beginPath();cx.moveTo(fx,fy);cx.lineTo(px,py);cx.stroke();
         }
       }
       cx.restore();
-      // 绘制虚线圆圈标记
+      // 绘制虚线圆圈标记(建议位置高亮)
       cx.save();
-      cx.strokeStyle=isOpp?'rgba(200,80,80,.7)':'rgba(58,122,90,.7)';
-      cx.lineWidth=2;
-      cx.setLineDash([4,3]);
+      cx.strokeStyle='rgba(200,140,40,.8)';
+      cx.lineWidth=2.5;
+      cx.setLineDash([5,3]);
       cx.beginPath();
       if(replayData.game==='gomoku'){
-        cx.arc(GP+x*GC, GP+y*GC, GR+5, 0, Math.PI*2);
+        cx.arc(GP+x*GC, GP+y*GC, GR+4, 0, Math.PI*2);
       }else if(replayData.game==='go'){
-        cx.arc(GOP+x*GOC, GOP+y*GOC, GOR+5, 0, Math.PI*2);
+        cx.arc(GOP+x*GOC, GOP+y*GOC, GOR+4, 0, Math.PI*2);
       }else if(replayData.game==='xq'){
-        var xqCW=XW/9, xqCH=XH/10;
-        cx.arc(3+xqCW/2+x*xqCW, 3+xqCH/2+y*xqCH, xqCW*0.4, 0, Math.PI*2);
+        var xqCW2=XW/9, xqCH2=XH/10;
+        cx.arc(3+xqCW2/2+x*xqCW2, 3+xqCH2/2+y*xqCH2, xqCW2*0.4, 0, Math.PI*2);
       }
       cx.stroke();
       cx.restore();
@@ -678,14 +716,13 @@ function rpGomokuComment(m, idx, phase, total){
 
   return {cmt: cmt, suggest: suggest};
 }
-// 寻找五子棋更好的着法
+// 寻找五子棋更好的着法(只对玩家方)
 function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
-  // 扫描全盘，找能形成活四或双活三的点
+  // 扫描全盘，找能形成更强棋型的点
   var bestMove=null, bestScore=0;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
     if(gB[y][x]!==0)continue;
     if(x===curX && y===curY)continue;
-    // 临时放置棋子检查
     gB[y][x]=p;
     var pc=gPatCount(gB, x, y, p);
     gB[y][x]=0;
@@ -696,23 +733,13 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
     }
   }
   if(bestMove && bestScore>=1000){
-    return {text:'此手可下('+bestMove.x+','+bestMove.y+')直接形成活四，胜机更大', x:bestMove.x, y:bestMove.y, isOpp:false};
+    return {text:'AI建议下('+bestMove.x+','+bestMove.y+')。理由：此处可直接形成活四，对手无论如何防守都无法阻止连五，是当前局面最强进攻手。你实际下的位置未能构成直接威胁，错失了致胜良机', x:bestMove.x, y:bestMove.y, isOpp:false};
   }
   if(bestMove && bestScore>=200 && bestMove.pc.LIVE_THREE>=2){
-    return {text:'若下('+bestMove.x+','+bestMove.y+')可形成双活三，攻势更盛', x:bestMove.x, y:bestMove.y, isOpp:false};
+    return {text:'AI建议下('+bestMove.x+','+bestMove.y+')。理由：此处可形成双活三，两个方向同时构成威胁，对手只能防一边，下一手即可转为活四胜势。你实际下法仅形成单一威胁，攻击力不足', x:bestMove.x, y:bestMove.y, isOpp:false};
   }
   if(bestMove && bestScore>=100 && bestMove.pc.LIVE_THREE>=1){
-    return {text:'此处下('+bestMove.x+','+bestMove.y+')能形成活三，更具进攻性', x:bestMove.x, y:bestMove.y, isOpp:false};
-  }
-  // 检查防守：是否漏防了对方威胁
-  for(var y2=0;y2<GS;y2++)for(var x2=0;x2<GS;x2++){
-    if(gB[y2][x2]!==0)continue;
-    gB[y2][x2]=opp;
-    var opc=gPatCount(gB, x2, y2, opp);
-    gB[y2][x2]=0;
-    if(opc.LIVE_FOUR>0 || opc.LIVE_THREE>=2){
-      return {text:'注意：对方在('+x2+','+y2+')可形成'+(opc.LIVE_FOUR>0?'活四':'双活三')+'，需提前防范', x:x2, y:y2, isOpp:true};
-    }
+    return {text:'AI建议下('+bestMove.x+','+bestMove.y+')。理由：此处能形成活三，对手必须立即防守，你可掌握先手继续扩大优势。你实际落子位置棋型较弱，未能给对手制造足够压力', x:bestMove.x, y:bestMove.y, isOpp:false};
   }
   return null;
 }
@@ -776,7 +803,7 @@ function rpGoComment(m, idx, goCaptured, phase, total){
         if(nx2>=0&&nx2<GSZ&&ny2>=0&&ny2<GSZ&&goB[nx2][ny2]!==0){nearAny=true;break}
       }
       if(!nearAny && phase!=='开局'){
-        suggest={text:'此手远离主战场，可考虑在棋形密集处落子更有价值'};
+        suggest={text:'AI建议：此手远离主战场，周围无棋子配合，效率较低。应优先在棋形密集处落子，与己方棋子形成呼应，或攻击对方弱棋，才能发挥每手棋的最大价值'};
       }
     }
   }
@@ -816,7 +843,7 @@ function rpFindBetterGoMove(curX, curY, myColor, oppColor, phase){
           var tx=vx+dirs2[d2][0],ty=vy+dirs2[d2][1];
           if(tx<0||tx>=GSZ||ty<0||ty>=GSZ)continue;
           if(goB[tx][ty]===0 && (tx!==curX||ty!==curY)){
-            return {text:'可考虑下('+tx+','+ty+')紧逼对方弱棋，伺机攻击', x:tx, y:ty, isOpp:false};
+            return {text:'AI建议下('+tx+','+ty+')。理由：对方此处棋子仅剩'+libs+'口气，已是弱棋。在此紧气可逼迫对方逃孤或被提，掌握攻击主动权。你实际落子未对对方弱棋施压，错失攻击良机', x:tx, y:ty, isOpp:false};
           }
         }
       }
@@ -835,7 +862,7 @@ function rpFindBetterGoMove(curX, curY, myColor, oppColor, phase){
       // 检查是否能围更大地盘
       var nearEdge=x2<=2||x2>=16||y2<=2||y2>=16;
       if(nearEdge && phase!=='收官'){
-        return {text:'可考虑下('+x2+','+y2+')围边占实地，巩固势力', x:x2, y:y2, isOpp:false};
+        return {text:'AI建议下('+x2+','+y2+')。理由：此处靠近边角，配合己方棋子可围成实地，效率高且风险低。你实际落子位置围空效率较低，未能最大化地盘收益', x:x2, y:y2, isOpp:false};
       }
     }
   }
@@ -893,7 +920,7 @@ function rpXQComment(m, idx, phase, total){
     }else if(phase==='中盘' && !(m.captured && m.captured!==0)){
       var pieceVal=XV[m.piece]||0;
       if(pieceVal>=400 && Math.abs(m.tr-m.fr)<=1 && Math.abs(m.tc-m.fc)<=1){
-        suggest={text:'大子仅微调，可考虑更积极的进攻路线'};
+        suggest={text:'AI建议：大子仅微调一步，未能发挥进攻潜力。中盘阶段应主动出击，用车马炮配合攻击对方薄弱环节，或抢占要道控制局势，而非消极调整'};
       }
     }
   }
@@ -918,7 +945,8 @@ function rpFindBetterXQMove(playerIsRed){
       if(netGain>bestVal){
         bestVal=netGain;
         var col='abcdefghi';
-        bestMove={text:'可走'+XC_H[piece]+'('+col[mv.fc]+(10-mv.fr)+'→'+col[mv.tc]+(10-mv.tr)+')吃对方'+XC_H[mv.captured]+(canBeRecaptured?'（注意被反吃）':''), x:mv.tc, y:mv.tr, isOpp:false, xq:true, fromX:mv.fc, fromY:mv.fr};
+        var reason=canBeRecaptured?('净赚'+(capVal-myVal)+'分，但需注意对方可反吃'):(('净赚'+capVal+'分，且不会被反吃，稳赚不赔'));
+        bestMove={text:'AI建议走'+XC_H[piece]+'('+col[mv.fc]+(10-mv.fr)+'→'+col[mv.tc]+(10-mv.tr)+')吃对方'+XC_H[mv.captured]+'。理由：'+reason+'。你实际走法未抓住吃子机会，让对方大子逃脱', x:mv.tc, y:mv.tr, isOpp:false, xq:true, fromX:mv.fc, fromY:mv.fr};
       }
     }
   }
