@@ -28,11 +28,13 @@ body{background:var(--paper);background-image:radial-gradient(ellipse at 15% 10%
 .card .name{font-size:1.25rem;letter-spacing:8px;margin-bottom:10px;font-weight:400}
 .card .desc{font-size:.72rem;letter-spacing:2px;color:var(--ink-l);text-align:center;line-height:2}
 .game{display:none;width:100%;flex-direction:column;align-items:center}.game.active{display:flex}
-.nav{display:flex;align-items:center;gap:20px;margin-bottom:18px}
-.nav .back{display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--ink-l);font-size:.8rem;letter-spacing:2px;transition:color .2s}
-.nav .back:hover{color:var(--accent)}.nav .back svg{width:14px;height:14px}
-.nav .title{font-size:1.15rem;letter-spacing:8px;font-weight:400}
-.nav .ln{width:30px;height:1px;background:var(--accent);opacity:.3}
+.nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px;position:relative}
+.nav .back{display:flex;align-items:center;gap:5px;cursor:pointer;color:var(--ink-l);font-size:.8rem;letter-spacing:2px;transition:color .2s;flex-shrink:0;padding:4px 10px;border-radius:20px}
+.nav .back:hover{color:var(--accent);background:rgba(139,94,60,.06)}.nav .back svg{width:14px;height:14px}
+.nav .title-wrap{display:flex;align-items:center;gap:12px}
+.nav .title{font-size:1.15rem;letter-spacing:8px;font-weight:400;white-space:nowrap}
+.nav .ln{width:30px;height:1px;background:var(--accent);opacity:.3;flex-shrink:0}
+.nav-spacer{flex-shrink:0;min-width:50px}
 .bar{display:flex;gap:10px;margin-bottom:8px;font-size:.8rem;align-items:center;flex-wrap:wrap;justify-content:center}
 .bar .it{display:flex;align-items:center;gap:7px;padding:5px 14px;border:1px solid var(--paper-d);border-radius:20px;background:var(--paper-w);color:var(--ink-s)}
 .si{width:14px;height:14px;border-radius:50%;display:inline-block;flex-shrink:0}
@@ -73,17 +75,10 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .turn-opt{padding:4px 14px;font-size:.72rem;border:1px solid var(--paper-d);border-radius:16px;cursor:pointer;color:var(--ink-l);transition:all .2s;letter-spacing:1px}
 .turn-opt:hover{border-color:var(--accent-s);color:var(--ink-s)}
 .turn-opt.active{background:var(--accent);color:var(--paper);border-color:var(--accent)}
-/* 胜率条 */
-.wr-bar{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:.72rem;max-width:560px;width:95vw}
-.wr-label{color:var(--ink-l);letter-spacing:1px;white-space:nowrap}
-.wr-track{flex:1;height:8px;background:var(--paper-d);border-radius:4px;overflow:hidden;position:relative}
-.wr-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--gold),var(--red));border-radius:4px;transition:width .5s ease}
-.wr-track::after{content:'';position:absolute;top:0;left:50%;width:1px;height:100%;background:rgba(28,25,23,.2)}
-.wr-pct{color:var(--ink-s);font-weight:600;min-width:38px;text-align:right}
 /* 回放模态框 */
-.rp-modal{display:none;position:fixed;inset:0;background:rgba(28,25,23,.85);z-index:100;align-items:center;justify-content:center;flex-direction:column;opacity:0;transition:opacity .3s}
+.rp-modal{display:none;position:fixed;inset:0;background:rgba(28,25,23,.85);z-index:100;align-items:center;justify-content:flex-start;flex-direction:column;opacity:0;transition:opacity .3s;overflow-y:auto;padding:50px 20px 20px}
 .rp-modal.show{display:flex;opacity:1}
-.rp-box{background:var(--paper);border-radius:var(--rl);padding:24px 32px;max-width:520px;width:90vw;max-height:80vh;overflow-y:auto}
+.rp-box{background:var(--paper);border-radius:var(--rl);padding:24px 32px;max-width:520px;width:90vw;max-height:80vh;overflow-y:auto;margin:auto}
 .rp-box h3{font-size:1.1rem;letter-spacing:6px;margin-bottom:16px;text-align:center;font-weight:400}
 .rp-list{display:flex;flex-direction:column;gap:8px}
 .rp-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--paper-w);border:1px solid var(--paper-d);border-radius:var(--r);cursor:pointer;transition:all .2s}
@@ -96,14 +91,24 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .rp-item .rp-del{font-size:.7rem;color:var(--ink-l);opacity:.5;cursor:pointer;padding:2px 6px}
 .rp-item .rp-del:hover{opacity:1;color:var(--red)}
 .rp-empty{text-align:center;color:var(--ink-l);font-size:.8rem;padding:20px}
+.rp-tabs{display:flex;gap:8px;margin-bottom:14px;justify-content:center;flex-wrap:wrap}
+.rp-tab{padding:5px 16px;font-size:.78rem;border:1px solid var(--paper-d);border-radius:16px;cursor:pointer;color:var(--ink-l);transition:all .2s;letter-spacing:1px}
+.rp-tab:hover{border-color:var(--accent-s);color:var(--ink-s)}
+.rp-tab.active{background:var(--accent);color:var(--paper);border-color:var(--accent)}
+@keyframes diffFade{0%{opacity:0;transform:translate(-50%,-50%) scale(.8)}20%{opacity:1;transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%) scale(.95)}}
+@keyframes spin{to{transform:rotate(360deg)}}
 .rp-close{margin-top:16px;width:100%;padding:8px;font-size:.8rem;background:var(--ink);color:var(--paper);border:none;border-radius:var(--r);cursor:pointer}
+/* 通用返回按钮(固定在左上角) */
+.rp-back{position:fixed;top:16px;left:16px;display:flex;align-items:center;gap:5px;cursor:pointer;color:#f5f0e6;font-size:.8rem;letter-spacing:2px;padding:6px 14px;border:1px solid rgba(217,205,180,.4);border-radius:20px;background:rgba(60,40,10,.6);transition:all .2s;z-index:102;backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.rp-back:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+.rp-back svg{width:14px;height:14px}
 /* 回放查看器 */
-.rp-viewer{display:none;position:fixed;inset:0;background:rgba(28,25,23,.92);z-index:101;align-items:center;justify-content:center;flex-direction:column;opacity:0;transition:opacity .3s}
+.rp-viewer{display:none;position:fixed;inset:0;background:rgba(28,25,23,.92);z-index:101;align-items:center;justify-content:flex-start;flex-direction:column;opacity:0;transition:opacity .3s;overflow-y:auto;padding:56px 16px 20px}
 .rp-viewer.show{display:flex;opacity:1}
-.rp-vbox{background:var(--paper);border-radius:var(--rl);padding:20px;display:flex;flex-direction:column;align-items:center;gap:12px}
+.rp-vbox{background:var(--paper);border-radius:var(--rl);padding:20px;display:flex;flex-direction:column;align-items:center;gap:12px;max-width:600px;width:90vw;margin:auto}
 .rp-vtitle{font-size:.9rem;letter-spacing:3px;color:var(--ink-s)}
 .rp-vinfo{font-size:.72rem;color:var(--ink-l)}
-.rp-vctl{display:flex;gap:8px;align-items:center}
+.rp-vctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center}
 .rp-vctl button{padding:6px 16px}
 .rp-vstep{font-size:.75rem;color:var(--ink-s);min-width:60px;text-align:center}
 .rp-vcomment{background:var(--paper-w);border-radius:var(--rl);padding:10px 14px;margin-top:8px;font-size:.82rem;color:var(--ink);min-height:36px;max-width:560px;line-height:1.7}
@@ -112,30 +117,37 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .rp-vcomment .rp-ai{background:rgba(200,130,30,.15);color:#a8651a}
 .rp-vcomment .rp-key{color:var(--accent);font-weight:600}
 .rp-vcomment .rp-val{color:#8b5e3c;font-weight:500}
-@media(max-width:640px){.entry h1{font-size:2.2rem;letter-spacing:12px;padding-left:12px}.card{width:170px;height:230px;padding:24px 16px}.card svg{width:56px;height:56px}.card .name{font-size:1rem;letter-spacing:5px}canvas{width:92vw!important;height:92vw!important}button{padding:6px 14px;font-size:.75rem}.nav .title{font-size:1rem;letter-spacing:5px}}
+@media(max-width:640px){.entry h1{font-size:2.2rem;letter-spacing:12px;padding-left:12px}.card{width:170px;height:230px;padding:24px 16px}.card svg{width:56px;height:56px}.card .name{font-size:1rem;letter-spacing:5px}canvas{width:92vw!important;height:92vw!important}button{padding:6px 14px;font-size:.75rem}.nav .title{font-size:1rem;letter-spacing:5px}.nav .ln{width:16px}.nav-spacer{min-width:40px}}
 /* 账户系统 */
-#acctModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(28,25,23,.5);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
-#acctModal.show{display:flex}
-.acct-card{background:var(--paper-w);border-radius:16px;padding:36px 40px;max-width:400px;width:90vw;box-shadow:0 8px 32px rgba(60,40,10,.3);border:1px solid var(--paper-d)}
-.acct-title{font-size:1.4rem;font-weight:300;letter-spacing:8px;text-align:center;color:var(--accent);margin-bottom:24px}
-.acct-input{width:100%;padding:10px 14px;border:1px solid var(--paper-d);border-radius:8px;background:rgba(255,255,255,.6);font-size:.9rem;color:var(--ink);margin-bottom:12px;outline:none;transition:border-color .3s}
-.acct-input:focus{border-color:var(--accent)}
-.acct-btn{width:100%;padding:10px;border:none;border-radius:8px;font-size:.85rem;cursor:pointer;letter-spacing:3px;transition:all .3s;margin-bottom:8px}
-.acct-btn-primary{background:var(--accent);color:#fff}
-.acct-btn-primary:hover{background:var(--accent2)}
-.acct-btn-secondary{background:var(--paper-d);color:var(--ink)}
-.acct-btn-secondary:hover{background:var(--paper-l)}
-.acct-hint{text-align:center;font-size:.72rem;color:var(--ink-l);margin-top:8px;letter-spacing:1px}
-.acct-link{text-align:center;margin-top:16px}
-.acct-link a{color:var(--ink-l);font-size:.78rem;text-decoration:none;letter-spacing:1px;cursor:pointer}
+#acctModal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(28,25,23,.45);z-index:1000;align-items:center;justify-content:center;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+#acctModal.show{display:flex;animation:acctFadeIn .25s ease}
+@keyframes acctFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes acctSlideUp{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
+.acct-card{background:linear-gradient(145deg,#faf5ea,#f3ebd9);border-radius:18px;padding:38px 40px;max-width:400px;width:90vw;box-shadow:0 12px 48px rgba(60,40,10,.18),0 2px 8px rgba(60,40,10,.08),inset 0 1px 0 rgba(255,255,255,.6);border:1px solid rgba(217,205,180,.7);animation:acctSlideUp .35s cubic-bezier(.2,.8,.2,1)}
+.acct-title{font-size:1.35rem;font-weight:300;letter-spacing:10px;text-align:center;color:var(--accent);margin-bottom:6px;padding-left:10px}
+.acct-subtitle{text-align:center;font-size:.68rem;color:var(--ink-l);letter-spacing:3px;margin-bottom:28px;opacity:.7}
+.acct-input{width:100%;padding:13px 18px;border:1.5px solid var(--paper-d);border-radius:12px;background:rgba(255,253,247,.7);font-size:.88rem;color:var(--ink-s);margin-bottom:14px;outline:none;caret-color:var(--accent-s);transition:all .3s cubic-bezier(.2,.8,.2,1);letter-spacing:1px;box-shadow:inset 0 1px 3px rgba(60,40,10,.04)}
+.acct-input:hover{border-color:var(--accent-s);background:rgba(255,253,247,.9)}
+.acct-input:focus{border-color:var(--accent);background:rgba(255,253,247,.95);box-shadow:0 0 0 3px rgba(139,94,60,.08),inset 0 1px 3px rgba(60,40,10,.03)}
+.acct-input::placeholder{color:var(--ink-l);opacity:.5}
+.acct-btn{width:100%;padding:11px;border:none;border-radius:10px;font-size:.85rem;cursor:pointer;letter-spacing:4px;transition:all .3s cubic-bezier(.2,.8,.2,1);margin-bottom:10px;font-family:var(--serif)}
+.acct-btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 3px 12px rgba(139,94,60,.25)}
+.acct-btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(139,94,60,.3)}
+.acct-btn-primary:active{transform:translateY(0)}
+.acct-btn-secondary{background:var(--paper-w);color:var(--ink-s);border:1px solid var(--paper-d)}
+.acct-btn-secondary:hover{background:var(--paper-d);transform:translateY(-1px)}
+.acct-btn-secondary:active{transform:translateY(0)}
+.acct-hint{text-align:center;font-size:.7rem;color:var(--ink-l);margin-top:10px;letter-spacing:1px;opacity:.7;line-height:1.8}
+.acct-link{text-align:center;margin-top:14px}
+.acct-link a{color:var(--ink-l);font-size:.76rem;text-decoration:none;letter-spacing:2px;cursor:pointer;transition:color .25s;padding:4px 8px;border-radius:6px}
 .acct-link a:hover{color:var(--accent)}
-.acct-stats{display:flex;justify-content:space-around;margin-bottom:20px;padding:16px;background:var(--paper-d);border-radius:8px}
+.acct-stats{display:flex;justify-content:space-around;margin-bottom:20px;padding:18px;background:linear-gradient(135deg,var(--paper-w),var(--paper-d));border-radius:12px;border:1px solid var(--paper-d)}
 .acct-stat{text-align:center}
-.acct-stat-num{font-size:1.5rem;font-weight:300;color:var(--accent)}
-.acct-stat-label{font-size:.7rem;color:var(--ink-l);letter-spacing:1px;margin-top:4px}
-.acct-records{max-height:300px;overflow-y:auto;margin-bottom:16px}
-.acct-record{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--paper-d);font-size:.78rem}
-.acct-record:hover{background:var(--paper-d)}
+.acct-stat-num{font-size:1.6rem;font-weight:300;color:var(--accent)}
+.acct-stat-label{font-size:.68rem;color:var(--ink-l);letter-spacing:2px;margin-top:4px}
+.acct-records{max-height:300px;overflow-y:auto;margin-bottom:16px;border-radius:8px}
+.acct-record{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--paper-d);font-size:.78rem;transition:background .2s}
+.acct-record:hover{background:rgba(217,205,180,.3)}
 .acct-record-result{font-weight:600;padding:2px 8px;border-radius:4px}
 .acct-result-win{background:rgba(58,122,90,.15);color:#2d6b4f}
 .acct-result-lose{background:rgba(200,80,80,.15);color:#a04040}
@@ -165,7 +177,8 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 <div class="game" id="game">
 <div class="nav">
 <div class="back" onclick="exit()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>返回</div>
-<div class="ln"></div><div class="title" id="ntitle">五子棋</div><div class="ln"></div>
+<div class="title-wrap"><div class="ln"></div><div class="title" id="ntitle">五子棋</div><div class="ln"></div></div>
+<div class="nav-spacer"></div>
 </div>
 <div class="diff-sel" id="diffsel">
 <div class="diff" data-d="1" onclick="setDiff(1)">入门</div>
@@ -181,11 +194,6 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 <div class="it"><span class="si sb"></span><span id="p1">你</span></div>
 <div id="st">你的回合</div>
 <div class="it"><span class="si sw"></span><span id="p2">电脑</span></div>
-</div>
-<div class="wr-bar" id="wrbar" style="display:none">
-<div class="wr-label">你的胜率</div>
-<div class="wr-track"><div class="wr-fill" id="wrfill" style="width:50%"></div></div>
-<div class="wr-pct" id="wrpct">50%</div>
 </div>
 <div id="wrap"><canvas id="bd"></canvas>
 <div id="ov"><h2 id="ot"></h2><p id="otx"></p><button id="obtn">再来一局</button></div></div>
@@ -212,7 +220,8 @@ var cv, cx, curGame = 'gomoku', over = false, curDiff = 2;
 var playerFirst = true; // 玩家先手
 var replayMode = false, replayData = null, replayStep = 0, replayTimer = null;
 var gameStartTime = Date.now(); // 游戏开始时间(用于记录每步耗时)
-var rpSpeed = 800; // 回放自动播放间隔(ms)
+var rpSpeed = 1500; // 回放自动播放间隔(ms) - 默认放慢到1.5秒
+var rpHasSuggestion = false; // 当前步是否有AI建议(闪烁中)
 var stats = (function(){try{return JSON.parse(localStorage.getItem('gmk_s')||'')}catch(e){}}())||{w:0,l:0,d:0};
 function saveS(){try{localStorage.setItem('gmk_s',JSON.stringify(stats))}catch(e){}}
 function addS(r){if(r==='w')stats.w++;else if(r==='l')stats.l++;else stats.d++;saveS()}
@@ -220,10 +229,32 @@ function addS(r){if(r==='w')stats.w++;else if(r==='l')stats.l++;else stats.d++;s
 function $(id){return document.getElementById(id)}
 function showOver(t,tx,cls){over=true;var o=$('ov');$('ot').textContent=t;$('ot').className=cls;$('otx').textContent=tx;o.classList.add('show');askSaveOnlineRecord()}
 function hideOver(){over=false;$('ov').classList.remove('show')}
+var pendingDiff=null; // AI思考期间暂存的难度变更
 function setDiff(d){
-  curDiff=d;
+  // 立即更新视觉状态(不阻塞)
   var ds=document.querySelectorAll('.diff');
   for(var i=0;i<ds.length;i++)ds[i].className='diff'+(parseInt(ds[i].getAttribute('data-d'))===d?' active':'');
+  // 立即显示切换提示(不阻塞)
+  var diffNames={1:'入门',2:'进阶',3:'高手',4:'大师'};
+  var hint=document.createElement('div');
+  hint.textContent='难度已切换：'+diffNames[d];
+  hint.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(28,25,23,.85);color:#f5f0e6;padding:12px 28px;border-radius:12px;font-size:.9rem;letter-spacing:3px;z-index:9999;pointer-events:none;animation:diffFade 1.2s ease forwards';
+  document.body.appendChild(hint);
+  setTimeout(function(){if(hint.parentNode)hint.parentNode.removeChild(hint)},1200);
+  // 如果AI正在思考,延迟实际变更到AI完成后
+  var aiThinking=(curGame==='gomoku'&&gAiThink)||(curGame==='go'&&goAi)||(curGame==='xq'&&xqAi);
+  if(aiThinking){
+    pendingDiff=d;
+  }else{
+    curDiff=d;
+  }
+}
+// AI完成后应用暂存的难度变更
+function applyPendingDiff(){
+  if(pendingDiff!==null){
+    curDiff=pendingDiff;
+    pendingDiff=null;
+  }
 }
 function showAIInfo(html){
   var el=$('aiinfo');
@@ -235,31 +266,14 @@ function setTurn(t){
   var ts=document.querySelectorAll('.turn-opt');
   for(var i=0;i<ts.length;i++)ts[i].className='turn-opt'+(parseInt(ts[i].getAttribute('data-t'))===t?' active':'');
 }
-function showWinRate(pct){
-  var bar=$('wrbar');
-  if(pct===null){bar.style.display='none';return}
-  bar.style.display='flex';
-  pct=Math.max(0,Math.min(100,Math.round(pct)));
-  $('wrfill').style.width=pct+'%';
-  $('wrpct').textContent=pct+'%';
-}
-// 胜率计算: 将评估分数转为百分比 (玩家视角)
-function scoreToWinRate(score){
-  // 分段sigmoid: 大分(胜负)快速归一, 小分(局势)敏感反映
-  var abs=Math.abs(score);
-  var k;
-  if(abs>=100000)k=1/10000;      // 胜负级: 快速归0/100
-  else if(abs>=10000)k=1/3000;    // 大优/大劣: 高敏感
-  else k=1/1500;                  // 中盘: 最敏感
-  var pct=1/(1+Math.exp(-score*k))*100;
-  return pct;
-}
-// 获取回放列表
+// 获取回放列表 - 登录时用用户专属key, 未登录时用游客key
 function getReplays(){
-  try{return JSON.parse(localStorage.getItem('gmk_replays')||'[]')}catch(e){return[]}
+  var key=yiCurrentUser?('yi_replays_'+yiCurrentUser):'gmk_replays';
+  try{return JSON.parse(localStorage.getItem(key)||'[]')}catch(e){return[]}
 }
 function saveReplays(arr){
-  try{localStorage.setItem('gmk_replays',JSON.stringify(arr))}catch(e){}
+  var key=yiCurrentUser?('yi_replays_'+yiCurrentUser):'gmk_replays';
+  try{localStorage.setItem(key,JSON.stringify(arr))}catch(e){}
 }
 // 保存当前棋局
 function saveCurrentGame(){
@@ -290,22 +304,35 @@ function saveCurrentGame(){
   replays.unshift({id:Date.now(),game:gameType,name:names[gameType],date:dateStr,result:result,moves:moves,diff:curDiff,playerFirst:playerFirst});
   if(replays.length>50)replays=replays.slice(0,50); // 最多保存50局
   saveReplays(replays);
-  alert('棋局已保存！\n'+names[gameType]+' · '+dateStr+' · '+moves.length+'手');
+  var who=yiCurrentUser?('已保存至棋手「'+yiCurrentUser+'」的档案'):('已保存至本地');
+  alert('棋局已保存！\n'+names[gameType]+' · '+dateStr+' · '+moves.length+'手\n'+who);
 }
 // 打开回放列表
+var rpFilter='all'; // 当前棋谱分类
+function setRPTab(tab,el){
+  rpFilter=tab;
+  var ts=document.querySelectorAll('.rp-tab');
+  for(var i=0;i<ts.length;i++)ts[i].className='rp-tab';
+  el.className='rp-tab active';
+  openRPModal();
+}
 function openRPModal(){
   var replays=getReplays();
   var list=$('rplist');
-  if(replays.length===0){
-    list.innerHTML='<div class="rp-empty">暂无保存的棋局</div>';
+  // 按分类筛选
+  var filtered=rpFilter==='all'?replays:replays.filter(function(r){return r.game===rpFilter});
+  var gameNames={gomoku:'五子棋',go:'围棋',xq:'象棋'};
+  if(filtered.length===0){
+    list.innerHTML='<div class="rp-empty">'+(rpFilter==='all'?'暂无保存的棋局':'暂无'+gameNames[rpFilter]+'棋局')+'</div>';
   }else{
     var resultText={win:'胜',lose:'负',draw:'平',unfinished:'未完'};
     var html='';
-    for(var i=0;i<replays.length;i++){
-      var r=replays[i];
+    for(var i=0;i<filtered.length;i++){
+      var r=filtered[i];
       var cls=r.result==='win'?'win':r.result==='lose'?'lose':'draw';
+      var gameTag=gameNames[r.game]||r.game;
       html+='<div class="rp-item" onclick="openRPViewer('+r.id+')">'+
-        '<div class="rp-info">'+r.name+' · '+r.date+' · '+r.moves.length+'手 · 难度'+r.diff+'</div>'+
+        '<div class="rp-info"><span style="color:var(--accent);font-weight:600;margin-right:6px">['+gameTag+']</span>'+r.name+' · '+r.date+' · '+r.moves.length+'手 · 难度'+r.diff+'</div>'+
         '<div style="display:flex;align-items:center;gap:8px">'+
         '<span class="rp-result '+cls+'">'+resultText[r.result]+'</span>'+
         '<span class="rp-del" onclick="renameReplay('+r.id+',event)">重命名</span>'+
@@ -377,7 +404,8 @@ function openRPViewer(id){
 }
 function closeRPViewer(){
   replayMode=false;
-  if(replayTimer){clearInterval(replayTimer);replayTimer=null}
+  if(replayTimer){clearTimeout(replayTimer);replayTimer=null}
+  if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
   $('rpviewer').classList.remove('show');
   $('rpplaybtn').textContent='▶ 自动';
   // 恢复原始canvas
@@ -397,40 +425,47 @@ function rpUpdateStep(){
   $('rpvstep').textContent=stepTxt;
 }
 function rpSetSpeed(v){
-  rpSpeed=parseInt(v,10)||800;
-  // 如果正在自动播放，用新速度重启定时器
+  rpSpeed=parseInt(v,10)||1500;
+  // 如果正在自动播放，用新速度重启
   if(replayTimer){
-    clearInterval(replayTimer);replayTimer=null;
-    var total=replayData.moves.length;
-    replayTimer=setInterval(function(){
-      if(replayStep>=total){clearInterval(replayTimer);replayTimer=null;$('rpplaybtn').textContent='▶ 自动';return}
-      rpApplyMove(replayStep);
-      replayStep++;
-      rpUpdateStep();
-    },rpSpeed);
+    rpStopAuto();
+    rpStartAuto();
   }
+}
+function rpStopAuto(){
+  if(replayTimer){clearTimeout(replayTimer);replayTimer=null}
+  $('rpplaybtn').textContent='▶ 自动';
+}
+function rpStartAuto(){
+  var total=replayData.moves.length;
+  if(replayStep>=total)replayStep=0;
+  $('rpplaybtn').textContent='⏸ 暂停';
+  function nextStep(){
+    if(replayStep>=total){rpStopAuto();return}
+    rpHasSuggestion=false;
+    rpApplyMove(replayStep);
+    replayStep++;
+    rpUpdateStep();
+    // 如果当前步触发了AI建议闪烁, 等闪烁完成后再继续
+    var wait=rpSpeed;
+    if(rpHasSuggestion){
+      wait=Math.max(wait,3500); // 闪烁持续3秒+0.5秒缓冲
+    }
+    replayTimer=setTimeout(nextStep,wait);
+  }
+  replayTimer=setTimeout(nextStep,rpSpeed);
 }
 function rpStep(dir){
   if(!replayData)return;
+  if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
   var total=replayData.moves.length;
   if(dir===0){
-    // 自动播放
-    if(replayTimer){
-      clearInterval(replayTimer);replayTimer=null;
-      $('rpplaybtn').textContent='▶ 自动';
-      return;
-    }
-    if(replayStep>=total)replayStep=0;
-    replayTimer=setInterval(function(){
-      if(replayStep>=total){clearInterval(replayTimer);replayTimer=null;$('rpplaybtn').textContent='▶ 自动';return}
-      rpApplyMove(replayStep);
-      replayStep++;
-      rpUpdateStep();
-    },rpSpeed);
-    $('rpplaybtn').textContent='⏸ 暂停';
+    // 自动播放: 切换播放/暂停
+    if(replayTimer){rpStopAuto();return}
+    rpStartAuto();
     return;
   }
-  if(replayTimer){clearInterval(replayTimer);replayTimer=null;$('rpplaybtn').textContent='▶ 自动'}
+  if(replayTimer){rpStopAuto()}
   if(dir>0&&replayStep<total){
     rpApplyMove(replayStep);replayStep++;rpUpdateStep();
   }else if(dir<0&&replayStep>0){
@@ -442,21 +477,122 @@ function rpStep(dir){
 function rpShowComment(idx, goCaptured){
   var el=$('rpvcomment');
   if(!el||!replayData)return;
-  if(idx<0){el.innerHTML='点击「下一步」开始回放，或按「自动」连续播放';return}
+  if(idx<0){
+    el.innerHTML='<span style="color:var(--ink-l)">点击「下一步」开始回放，或按「自动」连续播放。AI将逐步讲解每手棋的意图与优劣。</span>';
+    return;
+  }
   var m=replayData.moves[idx];
   var moveNum=idx+1;
-  // 判断这步是谁下的
+  var total=replayData.moves.length;
   var isHuman=rpIsHumanMove(idx);
   var whoTag=isHuman?'<span class="rp-who rp-human">你</span>':'<span class="rp-who rp-ai">AI</span>';
+  // 判断游戏阶段
+  var phase='';
+  var progress=idx/total;
+  if(progress<0.2)phase='开局';
+  else if(progress<0.6)phase='中盘';
+  else if(progress<0.85)phase='中后盘';
+  else phase='收官';
+  // 生成讲解
   var cmt='';
+  var suggestion='';
   if(replayData.game==='gomoku'){
-    cmt=rpGomokuComment(m,idx);
+    var result=rpGomokuComment(m,idx,phase,total);
+    cmt=result.cmt;
+    suggestion=result.suggest;
   }else if(replayData.game==='go'){
-    cmt=rpGoComment(m,idx,goCaptured);
+    var result2=rpGoComment(m,idx,goCaptured,phase,total);
+    cmt=result2.cmt;
+    suggestion=result2.suggest;
   }else if(replayData.game==='xq'){
-    cmt=rpXQComment(m,idx);
+    var result3=rpXQComment(m,idx,phase,total);
+    cmt=result3.cmt;
+    suggestion=result3.suggest;
   }
-  el.innerHTML=whoTag+'<span class="rp-key">第'+moveNum+'手</span> · '+cmt;
+  var html=whoTag+cmt;
+  if(suggestion){
+    html+='<br><span style="color:#8b5e3c;font-size:.76rem;margin-top:4px;display:inline-block">💡 '+suggestion.text+'</span>';
+    // 在棋盘上绘制透明闪烁建议棋子
+    if(suggestion.x!==undefined){
+      rpHasSuggestion=true; // 标记当前步有AI建议, 自动播放时需等待闪烁完成
+      rpDrawSuggestion(suggestion.x, suggestion.y, suggestion.isOpp, suggestion);
+    }
+  }
+  el.innerHTML=html;
+}
+// 在回放棋盘上绘制透明闪烁建议棋子
+var rpSuggestTimer=null;
+function rpDrawSuggestion(x, y, isOpp, sugg){
+  if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
+  var blinkOn=true;
+  var start=Date.now();
+  rpSuggestTimer=setInterval(function(){
+    if(Date.now()-start>3000){ // 3秒后停止
+      clearInterval(rpSuggestTimer);rpSuggestTimer=null;
+      // 重绘当前棋盘状态(去掉闪烁棋子)
+      if(replayData.game==='gomoku')drawGomoku();
+      else if(replayData.game==='go')drawGo();
+      else if(replayData.game==='xq')drawXQ();
+      return;
+    }
+    // 重绘棋盘
+    if(replayData.game==='gomoku')drawGomoku();
+    else if(replayData.game==='go')drawGo();
+    else if(replayData.game==='xq')drawXQ();
+    // 绘制半透明建议标记
+    if(blinkOn){
+      cx.save();
+      cx.globalAlpha=0.4;
+      if(replayData.game==='gomoku'){
+        var playerColor=replayData.playerFirst?1:2;
+        var suggColor=isOpp?(playerColor===1?2:1):playerColor;
+        drawBall(GP+x*GC, GP+y*GC, GR, suggColor===1);
+      }else if(replayData.game==='go'){
+        var goPlayerColor=replayData.playerFirst?1:2;
+        var goSuggColor=isOpp?(goPlayerColor===1?2:1):goPlayerColor;
+        drawBall(GOP+x*GOC, GOP+y*GOC, GOR, goSuggColor===1);
+      }else if(replayData.game==='xq'){
+        // 象棋: 在目标位置画半透明圆圈
+        var xqCellW=XW/9, xqCellH=XH/10;
+        var px=3+xqCellW/2+x*xqCellW;
+        var py=3+xqCellH/2+y*xqCellH;
+        cx.fillStyle=isOpp?'rgba(200,80,80,.4)':'rgba(58,122,90,.4)';
+        cx.beginPath();
+        cx.arc(px,py,xqCellW*0.35,0,Math.PI*2);
+        cx.fill();
+        // 如果有起始位置，画箭头
+        if(sugg&&sugg.fromX!==undefined){
+          var fx=3+xqCellW/2+sugg.fromX*xqCellW;
+          var fy=3+xqCellH/2+sugg.fromY*xqCellH;
+          cx.strokeStyle=isOpp?'rgba(200,80,80,.5)':'rgba(58,122,90,.5)';
+          cx.lineWidth=2;
+          cx.setLineDash([3,2]);
+          cx.beginPath();
+          cx.moveTo(fx,fy);
+          cx.lineTo(px,py);
+          cx.stroke();
+        }
+      }
+      cx.restore();
+      // 绘制虚线圆圈标记
+      cx.save();
+      cx.strokeStyle=isOpp?'rgba(200,80,80,.7)':'rgba(58,122,90,.7)';
+      cx.lineWidth=2;
+      cx.setLineDash([4,3]);
+      cx.beginPath();
+      if(replayData.game==='gomoku'){
+        cx.arc(GP+x*GC, GP+y*GC, GR+5, 0, Math.PI*2);
+      }else if(replayData.game==='go'){
+        cx.arc(GOP+x*GOC, GOP+y*GOC, GOR+5, 0, Math.PI*2);
+      }else if(replayData.game==='xq'){
+        var xqCW=XW/9, xqCH=XH/10;
+        cx.arc(3+xqCW/2+x*xqCW, 3+xqCH/2+y*xqCH, xqCW*0.4, 0, Math.PI*2);
+      }
+      cx.stroke();
+      cx.restore();
+    }
+    blinkOn=!blinkOn;
+  }, 400);
 }
 // 判断这步棋是人类还是AI下的
 function rpIsHumanMove(idx){
@@ -473,110 +609,328 @@ function rpIsHumanMove(idx){
   return true;
 }
 // 五子棋讲解
-function rpGomokuComment(m,idx){
-  var x=m.x,y=m.y,p=m.p,opp=3-p;
-  var pc=gPatCount(gB,x,y,p);
-  if(pc.FIVE>0)return'<span class="rp-key">胜负手！</span>连五成局，一击制胜';
-  if(pc.LIVE_FOUR>0)return'<span class="rp-key">妙手！</span>形成活四，下一手即可连五';
-  if(pc.RUSH_FOUR>=2)return'<span class="rp-key">强攻！</span>双冲四成型，对手无法兼顾';
-  if(pc.RUSH_FOUR>0)return'<span class="rp-key">进攻</span>冲四威胁，对手必须应一手';
-  if(pc.LIVE_THREE>=2)return'<span class="rp-key">强力进攻！</span>双活三交叉，攻势凌厉';
-  if(pc.LIVE_THREE>0&&pc.LIVE_TWO>0)return'<span class="rp-key">扩展</span>活三带活二，形势大好';
-  if(pc.LIVE_THREE>0)return'形成活三，持续向对手施压';
-  if(pc.SLEEP_THREE>0&&pc.LIVE_TWO>0)return'埋伏一手，眠三带活二伺机而动';
-  if(pc.SLEEP_THREE>0)return'埋伏一手，眠三待发';
-  if(pc.LIVE_TWO>=2)return'稳健布局，双活二展开阵势';
-  if(pc.LIVE_TWO>0)return'稳健布局，形成活二';
-  // 检查是否防守对方威胁
-  var opc=gPatCount(gB,x,y,opp);
-  if(opc.FIVE>0)return'<span class="rp-key">关键防守！</span>化解对方连五杀棋';
-  if(opc.LIVE_FOUR>0||opc.RUSH_FOUR>=2)return'<span class="rp-key">稳妥防守</span>化解对方活四攻势';
-  if(opc.RUSH_FOUR>0)return'稳妥防守，封堵对方冲四';
-  if(opc.LIVE_THREE>=2)return'<span class="rp-key">防守！</span>化解对方双活三威胁';
-  if(opc.LIVE_THREE>0)return'稳妥防守，化解对方攻势';
-  // 开局阶段
-  if(idx<4)return'开局布阵，占据天元要位';
-  if(idx<8)return'开局定式，展开角部争夺';
-  if(idx<14)return'中盘过渡，积蓄攻防力量';
-  // 判断是否接触战
-  var nearOpp=false;
-  for(var dx=-1;dx<=1&&!nearOpp;dx++)for(var dy=-1;dy<=1;dy++){
-    var nx=x+dx,ny=y+dy;
-    if(nx>=0&&nx<GS&&ny>=0&&ny<GS&&gB[ny][nx]===opp){nearOpp=true;break}
-  }
-  if(nearOpp)return'接触战，紧逼对方棋形';
-  return'正常布局，拓展势力范围';
-}
-// 围棋讲解
-function rpGoComment(m,idx,goCaptured){
-  var x=m.x,y=m.y;
-  var capCount=goCaptured||(m.cap?m.cap.length:0);
-  if(capCount>0)return'<span class="rp-key">提子！</span>吃掉对方<span class="rp-val">'+capCount+'子</span>，收获颇丰';
-  // 角部定式 (四角区域, 前12手)
-  var isCorner=(x<=5&&y<=5)||(x<=5&&y>=13)||(x>=13&&y<=5)||(x>=13&&y>=13);
-  if(isCorner&&idx<12)return'角部定式，抢占根据地';
-  // 抢占大场 (边路, 前20手)
-  var isSide=(x<=2||x>=16||y<=2||y>=16);
-  if(isSide&&idx<20)return'抢占大场，扩展边路势力';
-  // 中腹
-  var isCenter=(x>=7&&x<=11&&y>=7&&y<=11);
-  if(isCenter&&idx<16)return'中腹布局，着眼全局厚薄';
-  // 防守: 附近有对方棋子
-  var opp=m.c===1?2:1,nearOpp=false;
-  for(var dx=-2;dx<=2&&!nearOpp;dx++)for(var dy=-2;dy<=2;dy++){
-    var nx=x+dx,ny=y+dy;
-    if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ&&goB[nx][ny]===opp){nearOpp=true;break}
-  }
-  if(nearOpp){
-    // 检查是否攻击或防守
-    var myCount=0,oppCount=0;
-    for(var dx2=-1;dx2<=1;dx2++)for(var dy2=-1;dy2<=1;dy2++){
-      var nx2=x+dx2,ny2=y+dy2;
-      if(nx2>=0&&nx2<GSZ&&ny2>=0&&ny2<GSZ){
-        if(goB[nx2][ny2]===m.c)myCount++;
-        else if(goB[nx2][ny2]===opp)oppCount++;
+function rpGomokuComment(m, idx, phase, total){
+  var x=m.x, y=m.y, p=m.p, opp=3-p;
+  var pc=gPatCount(gB, x, y, p);
+  var opc=gPatCount(gB, x, y, opp);
+  var cmt='', suggest='';
+
+  // 检查己方棋型
+  if(pc.FIVE>0){
+    cmt='<span class="rp-key">连五！</span>'+(phase==='收官'?'终局一击，锁定胜局':'胜负已分');
+  }else if(pc.LIVE_FOUR>0){
+    cmt='<span class="rp-key">活四！</span>下一手必胜，对手无力回天';
+  }else if(pc.RUSH_FOUR>=2){
+    cmt='<span class="rp-key">双冲四！</span>两手冲四交叉，对手顾此失彼';
+  }else if(pc.RUSH_FOUR>0 && pc.LIVE_THREE>0){
+    cmt='<span class="rp-key">冲四带活三！</span>一攻一守，对手难以兼顾';
+  }else if(pc.RUSH_FOUR>0){
+    cmt='冲四进攻，迫使对手被动防守';
+  }else if(pc.LIVE_THREE>=2){
+    cmt='<span class="rp-key">双活三！</span>交叉威胁，下一手将形成必杀';
+  }else if(pc.LIVE_THREE>0 && pc.LIVE_TWO>=2){
+    cmt='活三带双活二，攻势绵延不绝';
+  }else if(pc.LIVE_THREE>0){
+    cmt='活三成型，持续向对手施压。对手若不应，下一手可转冲四';
+  }else if(pc.SLEEP_THREE>0 && pc.LIVE_TWO>0){
+    cmt='眠三配活二，暗中布阵伺机而动';
+  }else if(pc.SLEEP_THREE>0){
+    cmt='眠三埋伏，静待时机';
+  }else if(pc.LIVE_TWO>=2){
+    cmt=phase==='开局'?'双活二展开，布局稳健':'双活二衔接，积蓄攻势';
+  }else if(pc.LIVE_TWO>0){
+    cmt=phase==='开局'?'活二落子，占据要位':'形成活二，稳步推进';
+  }else{
+    // 检查防守
+    if(opc.FIVE>0){
+      cmt='<span class="rp-key">关键防守！</span>封堵对方连五，化险为夷';
+    }else if(opc.LIVE_FOUR>0 || opc.RUSH_FOUR>=2){
+      cmt='<span class="rp-key">必要防守</span>化解对方活四/双冲四杀棋';
+    }else if(opc.RUSH_FOUR>0){
+      cmt='防守对方冲四，稳妥应对';
+    }else if(opc.LIVE_THREE>=2){
+      cmt='<span class="rp-key">防守！</span>拆解对方双活三攻势';
+    }else if(opc.LIVE_THREE>0){
+      cmt='防守对方活三，限制其扩展';
+    }else{
+      // 普通着法
+      if(phase==='开局'){
+        cmt=idx===0?'天元起手，掌控中心要位':'开局布阵，抢占战略要点';
+      }else if(phase==='中盘'){
+        // 检查是否接触战
+        var nearOpp=false;
+        for(var dx=-1;dx<=1&&!nearOpp;dx++)for(var dy=-1;dy<=1;dy++){
+          var nx=x+dx,ny=y+dy;
+          if(nx>=0&&nx<GS&&ny>=0&&ny<GS&&gB[ny][nx]===opp){nearOpp=true;break}
+        }
+        cmt=nearOpp?'接触战，紧逼对方棋形争夺要地':'远处落子，拓展己方势力';
+      }else{
+        cmt='收官阶段，巩固既有优势';
       }
     }
-    if(oppCount>myCount)return'防守一手，巩固己方薄弱棋形';
-    return'攻防兼备，接触对方棋形';
   }
-  if(idx<30)return'稳健行棋，积蓄全局厚势';
-  return'正常行棋，伺机而动';
+
+  // 人类着法建议: 检查是否存在更好的进攻点
+  if(rpIsHumanMove(idx) && !pc.FIVE && !pc.LIVE_FOUR){
+    var bestSuggest=rpFindBetterGomokuMove(x, y, p, opp, idx);
+    if(bestSuggest) suggest=bestSuggest;
+  }
+
+  return {cmt: cmt, suggest: suggest};
+}
+// 寻找五子棋更好的着法
+function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
+  // 扫描全盘，找能形成活四或双活三的点
+  var bestMove=null, bestScore=0;
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==0)continue;
+    if(x===curX && y===curY)continue;
+    // 临时放置棋子检查
+    gB[y][x]=p;
+    var pc=gPatCount(gB, x, y, p);
+    gB[y][x]=0;
+    var score=pc.LIVE_FOUR*1000 + pc.RUSH_FOUR*200 + pc.LIVE_THREE*100 + pc.SLEEP_THREE*30 + pc.LIVE_TWO*10;
+    if(score>bestScore){
+      bestScore=score;
+      bestMove={x:x, y:y, pc:pc};
+    }
+  }
+  if(bestMove && bestScore>=1000){
+    return {text:'此手可下('+bestMove.x+','+bestMove.y+')直接形成活四，胜机更大', x:bestMove.x, y:bestMove.y, isOpp:false};
+  }
+  if(bestMove && bestScore>=200 && bestMove.pc.LIVE_THREE>=2){
+    return {text:'若下('+bestMove.x+','+bestMove.y+')可形成双活三，攻势更盛', x:bestMove.x, y:bestMove.y, isOpp:false};
+  }
+  if(bestMove && bestScore>=100 && bestMove.pc.LIVE_THREE>=1){
+    return {text:'此处下('+bestMove.x+','+bestMove.y+')能形成活三，更具进攻性', x:bestMove.x, y:bestMove.y, isOpp:false};
+  }
+  // 检查防守：是否漏防了对方威胁
+  for(var y2=0;y2<GS;y2++)for(var x2=0;x2<GS;x2++){
+    if(gB[y2][x2]!==0)continue;
+    gB[y2][x2]=opp;
+    var opc=gPatCount(gB, x2, y2, opp);
+    gB[y2][x2]=0;
+    if(opc.LIVE_FOUR>0 || opc.LIVE_THREE>=2){
+      return {text:'注意：对方在('+x2+','+y2+')可形成'+(opc.LIVE_FOUR>0?'活四':'双活三')+'，需提前防范', x:x2, y:y2, isOpp:true};
+    }
+  }
+  return null;
+}
+// 围棋讲解
+function rpGoComment(m, idx, goCaptured, phase, total){
+  var x=m.x, y=m.y;
+  var capCount=goCaptured||(m.cap?m.cap.length:0);
+  var cmt='', suggest='';
+
+  if(capCount>0){
+    if(capCount>=3){
+      cmt='<span class="rp-key">大屠杀！</span>提子'+capCount+'颗，局势逆转';
+    }else if(capCount===2){
+      cmt='<span class="rp-key">双提！</span>吃掉对方2子，收获不小';
+    }else{
+      cmt='提子1颗，削弱对方棋形';
+    }
+  }else{
+    var isCorner=(x<=5&&y<=5)||(x<=5&&y>=13)||(x>=13&&y<=5)||(x>=13&&y>=13);
+    var isSide=(x<=2||x>=16||y<=2||y>=16);
+    var isCenter=(x>=7&&x<=11&&y>=7&&y<=11);
+
+    if(phase==='开局'){
+      if(isCorner) cmt='角部定式，抢占根据地。金角银边草肚皮';
+      else if(isSide) cmt='边路拆边，扩展势力范围';
+      else if(isCenter) cmt='中腹落子，着眼全局厚薄';
+      else cmt='开局布阵，构筑基本骨架';
+    }else if(phase==='中盘'){
+      // 检查附近是否有接触战
+      var opp=m.c===1?2:1, nearOpp=false, oppCount=0, myCount=0;
+      for(var dx=-2;dx<=2&&!nearOpp;dx++)for(var dy=-2;dy<=2;dy++){
+        var nx=x+dx,ny=y+dy;
+        if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ){
+          if(goB[nx][ny]===opp){nearOpp=true;oppCount++}
+          else if(goB[nx][ny]===m.c)myCount++;
+        }
+      }
+      if(nearOpp){
+        if(oppCount>myCount) cmt='防守补强，巩固薄弱棋形';
+        else cmt='进攻作战，接触对方棋形';
+      }else{
+        cmt='抢占要点，拓展地盘';
+      }
+    }else{
+      cmt=phase==='收官'?'收官定型，精打细算每一目':'中后盘，积蓄厚势以待收官';
+    }
+  }
+
+  // 人类着法建议
+  if(rpIsHumanMove(idx) && capCount===0){
+    // 检查是否有更好的进攻点：找对方薄弱棋子附近
+    var opp2=m.c===1?2:1;
+    var bestGoSuggest=rpFindBetterGoMove(x,y,m.c,opp2,phase);
+    if(bestGoSuggest){
+      suggest=bestGoSuggest;
+    }else{
+      // 如果这步远离主战场，给出建议
+      var nearAny=false;
+      for(var dx2=-4;dx2<=4&&!nearAny;dx2++)for(var dy2=-4;dy2<=4;dy2++){
+        var nx2=x+dx2,ny2=y+dy2;
+        if(nx2>=0&&nx2<GSZ&&ny2>=0&&ny2<GSZ&&goB[nx2][ny2]!==0){nearAny=true;break}
+      }
+      if(!nearAny && phase!=='开局'){
+        suggest={text:'此手远离主战场，可考虑在棋形密集处落子更有价值'};
+      }
+    }
+  }
+
+  return {cmt: cmt, suggest: suggest};
+}
+// 寻找围棋更好的着法
+function rpFindBetterGoMove(curX, curY, myColor, oppColor, phase){
+  // 找对方薄弱棋子(少于2气的棋串)附近可攻击点
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]!==oppColor)continue;
+    // 检查这颗对方棋子的气
+    var libs=0;
+    var visited={};
+    var stack=[[x,y]];
+    while(stack.length>0){
+      var pos=stack.pop();
+      var px=pos[0],py=pos[1];
+      var key=px+','+py;
+      if(visited[key])continue;
+      visited[key]=1;
+      var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+      for(var d=0;d<4;d++){
+        var nx=px+dirs[d][0],ny=py+dirs[d][1];
+        if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+        if(goB[nx][ny]===0)libs++;
+        else if(goB[nx][ny]===oppColor&&!visited[nx+','+ny])stack.push([nx,ny]);
+      }
+    }
+    if(libs<=2 && libs>0){
+      // 找这组棋子附近的空点
+      for(var key2 in visited){
+        var parts=key2.split(',');
+        var vx=parseInt(parts[0]),vy=parseInt(parts[1]);
+        var dirs2=[[0,1],[0,-1],[1,0],[-1,0]];
+        for(var d2=0;d2<4;d2++){
+          var tx=vx+dirs2[d2][0],ty=vy+dirs2[d2][1];
+          if(tx<0||tx>=GSZ||ty<0||ty>=GSZ)continue;
+          if(goB[tx][ty]===0 && (tx!==curX||ty!==curY)){
+            return {text:'可考虑下('+tx+','+ty+')紧逼对方弱棋，伺机攻击', x:tx, y:ty, isOpp:false};
+          }
+        }
+      }
+    }
+  }
+  // 找己方可扩张的点
+  for(var x2=0;x2<GSZ;x2++)for(var y2=0;y2<GSZ;y2++){
+    if(goB[x2][y2]!==0)continue;
+    if(x2===curX&&y2===curY)continue;
+    var nearMy=false;
+    for(var dx=-1;dx<=1&&!nearMy;dx++)for(var dy=-1;dy<=1;dy++){
+      var nx=x2+dx,ny=y2+dy;
+      if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ&&goB[nx][ny]===myColor)nearMy=true;
+    }
+    if(nearMy){
+      // 检查是否能围更大地盘
+      var nearEdge=x2<=2||x2>=16||y2<=2||y2>=16;
+      if(nearEdge && phase!=='收官'){
+        return {text:'可考虑下('+x2+','+y2+')围边占实地，巩固势力', x:x2, y:y2, isOpp:false};
+      }
+    }
+  }
+  return null;
 }
 // 象棋讲解
-function rpXQComment(m,idx){
+function rpXQComment(m, idx, phase, total){
   var moveNum=idx+1;
+  var cmt='', suggest='';
+  var pieceName=XC_H[m.piece]||'棋子';
+
   // 吃子
-  if(m.captured&&m.captured!==0){
+  if(m.captured && m.captured!==0){
     var capName=XC_H[m.captured]||'棋子';
     var capVal=XV[m.captured]||0;
-    var valText=capVal>=900?'<span class="rp-key">主力</span>':capVal>=400?'<span class="rp-val">大子</span>':'<span class="rp-val">小子</span>';
-    return'<span class="rp-key">吃子！</span>吃掉对方'+capName+'（'+valText+'），获利'+capVal+'分';
-  }
-  // 将军检查
-  var moverRed=xqRedP(m.piece);
-  var oppRed=!moverRed;
-  if(xqCheck(xqB,oppRed))return'<span class="rp-key">将军！</span>迫使对方应将';
-  // 开局阶段
-  if(moveNum<=4)return'开局出子，展开阵型';
-  if(moveNum<=8)return'开局库定式，抢占要道';
-  if(moveNum<=12)return'中局过渡，调兵遣将';
-  // 判断棋子类型给出点评
-  var pieceName=XC_H[m.piece]||'棋子';
-  // 检查是否过河
-  var crossedRiver=moverRed?(m.tr<5):(m.tr>4);
-  if(crossedRiver&&(m.piece===7||m.piece===14))return'<span class="rp-key">过河兵！</span>兵卒过河，威胁增大';
-  if((m.piece===6||m.piece===13)&&idx>10){
-    // 炮的点评
-    var hasTarget=false;
-    for(var c=0;c<9&&!hasTarget;c++)for(var r=0;r<10;r++){
-      if(xqB[r][c]!==0&&(r!==m.tr||c!==m.tc))hasTarget=true;
+    if(capVal>=900){
+      cmt='<span class="rp-key">吃车！</span>斩获对方主力，战局天平倾斜';
+    }else if(capVal>=400){
+      cmt='<span class="rp-key">吃'+capName+'！</span>消灭对方大子，物质优势扩大';
+    }else{
+      cmt='吃掉对方'+capName+'，小有收获';
     }
-    return'炮的机动，远程威胁对方阵型';
+  }else{
+    // 将军检查
+    var moverRed=xqRedP(m.piece);
+    var oppRed=!moverRed;
+    if(xqCheck(xqB, oppRed)){
+      cmt='<span class="rp-key">将军！</span>迫使对方应将，掌握主动';
+    }else{
+      if(phase==='开局'){
+        var openNames={12:'车出动抢占要道',5:'车出动控制沿线',11:'马跃要位蓄势待发',4:'马跃河道策应',6:'炮平中远程施压',13:'炮位调整伺机进攻',1:'帅坐中堂稳固后方',8:'将坐中堂稳固后方'};
+        cmt=openNames[m.piece]||'开局出子，展开阵型';
+      }else if(phase==='中盘'){
+        var midNames={12:'车控要道',5:'车控要道',11:'马踩要位',4:'马踩要位',6:'炮瞄目标',13:'炮瞄目标',7:'兵过河威胁增大',14:'卒过河威胁增大'};
+        cmt=midNames[m.piece]||'调兵遣将，争夺要地';
+        // 检查是否过河
+        var crossedRiver=moverRed?(m.tr<5):(m.tr>4);
+        if(crossedRiver && (m.piece===7||m.piece===14)){
+          cmt='<span class="rp-key">过河兵！</span>威胁对方腹地，价值倍增';
+        }
+      }else{
+        cmt='残局阶段，'+pieceName+'调动';
+      }
+    }
   }
-  if((m.piece===11||m.piece===4)&&idx>8)return'马跃要位，控制关键格子';
-  if((m.piece===12||m.piece===5)&&idx>8)return'车出动，控制要道';
-  return'正常出子，'+pieceName+'调动';
+
+  // 人类着法建议: 检查是否存在能吃子的着法
+  if(rpIsHumanMove(idx) && !(m.captured && m.captured!==0)){
+    var moverRed2=xqRedP(m.piece);
+    var playerIsRed2=replayData.playerFirst;
+    // 扫描所有己方棋子，找能吃对方大子的着法
+    var bestCapture=rpFindBetterXQMove(playerIsRed2);
+    if(bestCapture){
+      suggest=bestCapture;
+    }else if(phase==='中盘' && !(m.captured && m.captured!==0)){
+      var pieceVal=XV[m.piece]||0;
+      if(pieceVal>=400 && Math.abs(m.tr-m.fr)<=1 && Math.abs(m.tc-m.fc)<=1){
+        suggest={text:'大子仅微调，可考虑更积极的进攻路线'};
+      }
+    }
+  }
+
+  return {cmt: cmt, suggest: suggest};
+}
+// 寻找象棋更好的着法(能吃大子的走法)
+function rpFindBetterXQMove(playerIsRed){
+  var bestMove=null, bestVal=0;
+  var allMoves=xqLegalMoves(xqB,playerIsRed);
+  for(var i=0;i<allMoves.length;i++){
+    var mv=allMoves[i];
+    if(mv.captured && mv.captured!==0){
+      var capVal=XV[mv.captured]||0;
+      var piece=xqB[mv.fr][mv.fc];
+      var myVal=XV[piece]||0;
+      // 检查吃子后是否被反吃
+      xqB[mv.tr][mv.tc]=piece;xqB[mv.fr][mv.fc]=0;
+      var canBeRecaptured=xqCanCapture(xqB,!playerIsRed,mv.tr,mv.tc);
+      xqB[mv.fr][mv.fc]=piece;xqB[mv.tr][mv.tc]=mv.captured;
+      var netGain=canBeRecaptured?(capVal-myVal):capVal;
+      if(netGain>bestVal){
+        bestVal=netGain;
+        var col='abcdefghi';
+        bestMove={text:'可走'+XC_H[piece]+'('+col[mv.fc]+(10-mv.fr)+'→'+col[mv.tc]+(10-mv.tr)+')吃对方'+XC_H[mv.captured]+(canBeRecaptured?'（注意被反吃）':''), x:mv.tc, y:mv.tr, isOpp:false, xq:true, fromX:mv.fc, fromY:mv.fr};
+      }
+    }
+  }
+  return bestMove;
+}
+// 检查象棋某位置是否可以被对方吃
+function xqCanCapture(board, attackerRed, tr, tc){
+  var moves=xqLegalMoves(board,attackerRed);
+  for(var i=0;i<moves.length;i++){
+    if(moves[i].tr===tr&&moves[i].tc===tc)return true;
+  }
+  return false;
 }
 function rpApplyMove(idx){
   var m=replayData.moves[idx];
@@ -624,7 +978,9 @@ function downloadReplayHTML(){
   html+='<title>'+r.name+' 回放 - 弈·棋道</title>\n';
   html+='<style>\n';
   html+='*{margin:0;padding:0;box-sizing:border-box}\n';
-  html+='body{background:#f5f0e6;color:#1c1917;font-family:"PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px}\n';
+  html+='body{background:#f5f0e6;color:#1c1917;font-family:"PingFang SC","Microsoft YaHei",sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:20px;position:relative}\n';
+  html+='.back-btn{position:fixed;top:16px;left:16px;display:flex;align-items:center;gap:5px;cursor:pointer;color:#78716c;font-size:.82rem;letter-spacing:2px;padding:6px 14px;border:1px solid #d9cdb4;border-radius:20px;background:#ebe3d2;transition:all .2s;z-index:100}\n';
+  html+='.back-btn:hover{background:#8b5e3c;color:#fff}\n';
   html+='h1{font-size:1.5rem;font-weight:300;letter-spacing:6px;margin-bottom:4px;color:#1c1917}\n';
   html+='.info{font-size:.85rem;color:#78716c;margin-bottom:16px}\n';
   html+='canvas{border-radius:8px;box-shadow:0 2px 12px rgba(60,40,10,.2);max-width:100%;height:auto}\n';
@@ -634,6 +990,7 @@ function downloadReplayHTML(){
   html+='.step{font-size:.85rem;color:#78716c;min-width:60px;text-align:center}\n';
   html+='.footer{margin-top:20px;font-size:.75rem;color:#a8a29e}\n';
   html+='</style>\n</head>\n<body>\n';
+  html+='<div class="back-btn" onclick="history.back();window.close()"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"></path></svg>返回</div>\n';
   html+='<h1>'+r.name+' 回放</h1>\n';
   html+='<div class="info">'+r.date+' · '+r.moves.length+'手 · '+resultText+' · 难度'+r.diff+'</div>\n';
   html+='<canvas id="board"></canvas>\n';
@@ -681,7 +1038,7 @@ function downloadReplayHTML(){
   html+='function initBoard(){cv=document.getElementById("board");cx=cv.getContext("2d");if(RD.game==="gomoku"){cv.width=GX;cv.height=GX;gB=[];for(var i=0;i<GS;i++)gB.push(new Array(GS).fill(0));gLast=null;drawGomoku()}else if(RD.game==="go"){cv.width=GOSZ;cv.height=GOSZ;goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));goLast=null;goKo=null;drawGo()}else if(RD.game==="xq"){cv.width=XW;cv.height=XH;xqB=xqInitBoard();xqSel=null;drawXQ()}}\n';
   // 回放控制
   html+='function updStep(){document.getElementById("step").textContent=rpStep2+"/"+RD.moves.length}\n';
-  html+='function rpStep(dir){if(dir===0){if(rpTimer){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8";return}if(rpStep2>=RD.moves.length)rpStep2=0;rpTimer=setInterval(function(){if(rpStep2>=RD.moves.length){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8";return}applyMove(rpStep2);rpStep2++;updStep()},800);document.getElementById("playbtn").textContent="\\u23f8 \\u6682\\u505c";return}if(rpTimer){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8"}if(dir>0&&rpStep2<RD.moves.length){applyMove(rpStep2);rpStep2++;updStep()}else if(dir<0&&rpStep2>0){rpStep2--;rebuildTo(rpStep2);updStep()}}\n';
+  html+='function rpStep(dir){if(dir===0){if(rpTimer){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8";return}if(rpStep2>=RD.moves.length)rpStep2=0;rpTimer=setInterval(function(){if(rpStep2>=RD.moves.length){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8";return}applyMove(rpStep2);rpStep2++;updStep()},1500);document.getElementById("playbtn").textContent="\\u23f8 \\u6682\\u505c";return}if(rpTimer){clearInterval(rpTimer);rpTimer=null;document.getElementById("playbtn").textContent="\\u25b6 \\u81ea\\u52a8"}if(dir>0&&rpStep2<RD.moves.length){applyMove(rpStep2);rpStep2++;updStep()}else if(dir<0&&rpStep2>0){rpStep2--;rebuildTo(rpStep2);updStep()}}\n';
   html+='function applyMove(idx){var m=RD.moves[idx];if(RD.game==="gomoku"){gB[m.y][m.x]=m.p;gLast={x:m.x,y:m.y,p:m.p};drawGomoku()}else if(RD.game==="go"){var r=goTry(goB,m.x,m.y,m.c,goKo);if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:m.x,y:m.y,c:m.c};drawGo()}}else if(RD.game==="xq"){xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0;xqSel=[m.tr,m.tc];drawXQ();xqSel=null}}\n';
   html+='function rebuildTo(step){if(RD.game==="gomoku"){gB=[];for(var i=0;i<GS;i++)gB.push(new Array(GS).fill(0));gLast=null;for(var i=0;i<step;i++){var m=RD.moves[i];gB[m.y][m.x]=m.p}if(step>0){var lm=RD.moves[step-1];gLast={x:lm.x,y:lm.y,p:lm.p}}drawGomoku()}else if(RD.game==="go"){goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));goLast=null;goKo=null;for(var i=0;i<step;i++){var m=RD.moves[i];var r=goTry(goB,m.x,m.y,m.c,goKo);if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:m.x,y:m.y,c:m.c}}}drawGo()}else if(RD.game==="xq"){xqB=xqInitBoard();xqSel=null;for(var i=0;i<step;i++){var m=RD.moves[i];xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0}if(step>0){var lm=RD.moves[step-1];xqSel=[lm.tr,lm.tc]}drawXQ();xqSel=null}}\n';
   // 启动
@@ -702,6 +1059,7 @@ function downloadReplayHTML(){
 function enter(g){
   curGame=g;hideOver();showAIInfo('');
   gameStartTime=Date.now(); // 重置游戏开始时间
+  pendingDiff=null; // 清除暂存的难度变更
   $('entry').style.display='none';
   $('game').classList.add('active');
   var titles={gomoku:'五子棋',go:'围棋',xq:'象棋'};
@@ -723,6 +1081,7 @@ function enter(g){
 function exit(){
   // 中断所有AI计算
   goAbort=true;gAbort=true;xqAbort=true;goAi=false;gAiThink=false;xqAi=false;
+  pendingDiff=null;
   goH=null;
   $('entry').style.display='flex';
   $('game').classList.remove('active');
@@ -1438,9 +1797,6 @@ function gAIMove(){
   if(bs>800000)info+=' [优势]';
   else if(bs<-800000)info+=' [劣势]';
   showAIInfo(info);
-  // 显示胜率: bs是AI视角分数, 转为玩家胜率显示
-  var wr=scoreToWinRate(bs);
-  showWinRate(playerFirst?(100-wr):wr);
   return best;
 }
 
@@ -1450,7 +1806,6 @@ function initGomoku(){
   gH=[];gCur=1;gAiThink=false;gLast=null;hideOver();showAIInfo('');
   $('p1').textContent=playerFirst?'你':'电脑';
   $('p2').textContent=playerFirst?'电脑':'你';
-  showWinRate(50);
   setupEv();updSt();drawGomoku();updCursor();
   // 如果电脑先手
   if(!playerFirst){
@@ -1460,7 +1815,7 @@ function initGomoku(){
     setTimeout(function(){
       var m=gAIMove();
       if(m){gB[m.y][m.x]=1;gH.push({x:m.x,y:m.y,p:1,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:1};drawGomoku()}
-      gCur=2;gAiThink=false;updSt();updCursor();
+      gCur=2;gAiThink=false;updSt();updCursor();applyPendingDiff();
     },50);
   }
 }
@@ -1498,9 +1853,9 @@ function gomokuPlay(x,y){
   setTimeout(function(){
     var m=gAIMove();
     if(m){gB[m.y][m.x]=aiColor;gH.push({x:m.x,y:m.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:aiColor};drawGomoku();
-      if(gCheckWin(gB,m.x,m.y,aiColor)){addS('l');showOver('负','再来一局','lose');gAiThink=false;updCursor();return}
+      if(gCheckWin(gB,m.x,m.y,aiColor)){addS('l');showOver('负','再来一局','lose');gAiThink=false;updCursor();applyPendingDiff();return}
     }
-    gCur=playerColor;gAiThink=false;updSt();updCursor();
+    gCur=playerColor;gAiThink=false;updSt();updCursor();applyPendingDiff();
   },50);
 }
 function updSt(){
@@ -1525,7 +1880,6 @@ function initGo(){
   goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));
   goKo=null;goLast=null;goCur=1;goPass=0;goOver=false;goAi=false;goH=null;goAbort=false;goCaps=[0,0];goHist=[];hideOver();showAIInfo('');
   $('p1').textContent=playerFirst?'你（黑）':'AI（黑）';$('p2').textContent=playerFirst?'AI（白）':'你（白）';$('st').textContent='请落子';
-  showWinRate(50);
   setupEv();drawGo();
   // 如果电脑先手(AI下黑棋)
   if(!playerFirst){
@@ -1539,6 +1893,7 @@ function initGo(){
         if(r2.valid){goB=r2.newBoard;goKo=r2.newKo;goLast={x:m.move[0],y:m.move[1],c:1};goHist.push({x:m.move[0],y:m.move[1],c:1,t:Math.round((Date.now()-gameStartTime)/1000)});drawGo()}
       }
       goCur=2;$('st').textContent='请落子';
+      applyPendingDiff();
     });
   }
 }
@@ -2104,8 +2459,6 @@ function goMCTS(b,c,ko,onMCTSResult){
       info+=' 胜率'+aiWr.toFixed(1)+'%';
     }
     showAIInfo(info);
-    // 显示玩家胜率 (AI模拟胜率反转)
-    showWinRate(100-aiWr);
     onMCTSResult(bn?{move:bn.move}:null);
   }
   setTimeout(runChunk,0);
@@ -2158,7 +2511,7 @@ function goPlay(x,y){
     if(!m){
       goPass++;
       if(goPass>=2){goEnd();return}
-      goCur=playerColor;$('st').textContent='请落子';return;
+      goCur=playerColor;$('st').textContent='请落子';applyPendingDiff();return;
     }
     var r2=goTry(goB,m.move[0],m.move[1],aiColor,goKo);
     if(r2.valid){
@@ -2168,6 +2521,7 @@ function goPlay(x,y){
     }
     goPass=0;
     goCur=playerColor;$('st').textContent='请落子';
+    applyPendingDiff();
   });
 }
 function goEnd(){
@@ -2208,7 +2562,6 @@ function initXQ(){
   xqB=[[12,11,10,9,8,9,10,11,12],[0,0,0,0,0,0,0,0,0],[0,13,0,0,0,0,0,13,0],[14,0,14,0,14,0,14,0,14],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[7,0,7,0,7,0,7,0,7],[0,6,0,0,0,0,0,6,0],[0,0,0,0,0,0,0,0,0],[5,4,3,2,1,2,3,4,5]];
   xqRed=playerFirst;xqAiRed=!playerFirst;xqSel=null;xqLegal=[];xqHist=[];xqOver=false;xqAi=false;xqTT=new Map();hideOver();showAIInfo('');
   $('p1').textContent=playerFirst?'你（红）':'AI（红）';$('p2').textContent=playerFirst?'AI（黑）':'你（黑）';$('st').textContent=playerFirst?'你的回合':'AI回合';$('xm').innerHTML='';
-  showWinRate(50);
   setupEv();drawXQ();
   // 如果电脑先手(AI下红棋)
   if(!playerFirst){
@@ -2219,6 +2572,7 @@ function initXQ(){
       xqRed=false;drawXQ();xqUpdM();
       var mc=xqCheck(xqB,false)?' 你被将军':'';
       $('st').textContent='你的回合'+mc;
+      applyPendingDiff();
     },50);
   }
 }
@@ -2674,9 +3028,6 @@ function xqAIMove(){
   if(bestScore>90000)info+=' [优势]';
   else if(bestScore<-90000)info+=' [劣势]';
   showAIInfo(info);
-  // 显示胜率 (AI视角,反转给玩家看)
-  var wr=scoreToWinRate(bestScore);
-  showWinRate(playerFirst?(100-wr):wr);
   return best;
 }
 function drawXQ(){
@@ -2793,6 +3144,7 @@ function xqPlay(r,c){
         var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');return}
         var mc=xqCheck(xqB,playerIsRed)?' 你被将军':'';
         $('st').textContent='你的回合'+mc;
+        applyPendingDiff();
       },50);return;
     }
     xqSel=null;xqLegal=[];drawXQ();
@@ -2848,13 +3200,22 @@ $('rpbtn').onclick=function(){openRPModal()};
 // 回放模态框HTML
 document.body.insertAdjacentHTML('beforeend',
 '<div class="rp-modal" id="rpmodal">'+
-'<div class="rp-box"><h3>棋谱回放</h3><div class="rp-list" id="rplist"></div>'+
+'<div class="rp-back" onclick="closeRPModal()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>返回</div>'+
+'<div class="rp-box"><h3>棋谱回放</h3>'+
+'<div class="rp-tabs" id="rptabs">'+
+'<span class="rp-tab active" onclick="setRPTab(\'all\',this)">全部</span>'+
+'<span class="rp-tab" onclick="setRPTab(\'gomoku\',this)">五子棋</span>'+
+'<span class="rp-tab" onclick="setRPTab(\'go\',this)">围棋</span>'+
+'<span class="rp-tab" onclick="setRPTab(\'xq\',this)">象棋</span>'+
+'</div>'+
+'<div class="rp-list" id="rplist"></div>'+
 '<button class="rp-close" onclick="closeRPModal()">关闭</button></div></div>'+
 '<div class="rp-viewer" id="rpviewer">'+
+'<div class="rp-back" onclick="closeRPViewer()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>返回</div>'+
 '<div class="rp-vbox"><div class="rp-vtitle" id="rpvtitle"></div><div class="rp-vinfo" id="rpvinfo"></div>'+
 '<canvas id="rpbd" style="border-radius:var(--rl);box-shadow:0 2px 8px rgba(60,40,10,.15)"></canvas>'+
 '<div id="rpvcomment" class="rp-vcomment"></div>'+
-'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><select id="rpspeed" onchange="rpSetSpeed(this.value)" style="padding:5px 8px;font-size:.75rem;border:1px solid var(--paper-d);border-radius:var(--r);background:var(--paper-w);color:var(--ink-s);font-family:var(--serif)"><option value="1600">0.5x</option><option value="800" selected>1x</option><option value="400">2x</option><option value="200">4x</option></select><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
+'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><select id="rpspeed" onchange="rpSetSpeed(this.value)" style="padding:5px 8px;font-size:.75rem;border:1px solid var(--paper-d);border-radius:var(--r);background:var(--paper-w);color:var(--ink-s);font-family:var(--serif)"><option value="3000">0.5x 慢速</option><option value="2000">0.75x</option><option value="1500" selected>1x 正常</option><option value="1000">1.5x</option><option value="600">2x 快速</option><option value="300">4x 极速</option></select><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
 '<button class="rp-close" style="width:auto" onclick="closeRPViewer()">退出回放</button></div></div>');
 
 // ============================================================
@@ -2862,12 +3223,77 @@ document.body.insertAdjacentHTML('beforeend',
 // ============================================================
 var yiCurrentUser=null; // 当前登录用户ID
 
-function getAccounts(){
-  try{return JSON.parse(localStorage.getItem('yi_chess_accounts')||'{}')}catch(e){return{}}
+// === 云端账号系统 (GitHub API) ===
+// 账号数据存储在 GitHub 仓库 data/accounts.json, 任意设备可通过 API 读写
+var YI_GH_REPO='liuzufan/-yi-chess';
+var YI_GH_TOKEN='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';
+var YI_GH_API='https://api.github.com/repos/'+YI_GH_REPO+'/contents/data/accounts.json';
+var YI_GH_RAW='https://raw.githubusercontent.com/'+YI_GH_REPO+'/main/data/accounts.json';
+// 简单密码hash (djb2)
+function yiHash(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return String(h)}
+// UTF-8安全base64编码
+function yiB64Enc(str){return btoa(unescape(encodeURIComponent(str)))}
+function yiB64Dec(b64){return decodeURIComponent(escape(atob(b64)))}
+// 云端API: 读取accounts.json (带缓存绕过+自动重试)
+function yiCloudRead(retries){
+  retries=retries||4;
+  // 加时间戳绕过CDN缓存
+  var url=YI_GH_API+'?_t='+Date.now()+'&ref=main';
+  return fetch(url,{headers:{'Accept':'application/vnd.github.v3+json'},cache:'no-store'})
+    .then(function(r){
+      if(r.status===404){
+        // 文件不存在, 返回空数据
+        return {data:{accounts:{}}, sha:null};
+      }
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      return r.json();
+    })
+    .then(function(d){
+      if(d&&d.content){
+        var json=yiB64Dec(d.content.replace(/\n/g,''));
+        return {data:JSON.parse(json), sha:d.sha};
+      }
+      // 如果只有sha没有content(理论上不会), 返回空
+      if(d&&d.sha)return {data:{accounts:{}}, sha:d.sha};
+      return {data:{accounts:{}}, sha:null};
+    })
+    .catch(function(e){
+      if(retries>1)return new Promise(function(resolve){
+        setTimeout(function(){resolve(yiCloudRead(retries-1))},1000);
+      });
+      throw e;
+    });
 }
-function saveAccounts(obj){
-  try{localStorage.setItem('yi_chess_accounts',JSON.stringify(obj))}catch(e){}
+// 云端API: 写入accounts.json (带冲突重试+自动重试)
+function yiCloudWrite(data, sha, retries){
+  retries=retries||4;
+  var content=yiB64Enc(JSON.stringify(data));
+  return fetch(YI_GH_API,{
+    method:'PUT',
+    headers:{'Authorization':'token '+YI_GH_TOKEN,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
+    body:JSON.stringify({message:'update accounts',content:content,sha:sha})
+  }).then(function(r){return r.json()})
+    .then(function(d){
+      // 如果SHA冲突(别人刚写入), 重新读取最新版本再写入
+      if(d&&d.message&&d.message.indexOf('does not match')>=0){
+        if(retries>1){
+          return yiCloudRead(3).then(function(r){
+            return yiCloudWrite(data,r.sha,retries-1);
+          });
+        }
+      }
+      return d;
+    })
+    .catch(function(e){
+      if(retries>1)return new Promise(function(resolve){
+        setTimeout(function(){resolve(yiCloudWrite(data,sha,retries-1))},1000);
+      });
+      throw e;
+    });
 }
+// 本地缓存
+function getLocalAcct(){try{return JSON.parse(localStorage.getItem('yi_chess_acct_cache')||'null')}catch(e){return null}}
+function saveLocalAcct(a){try{localStorage.setItem('yi_chess_acct_cache',JSON.stringify(a))}catch(e){}}
 function loadCurrentUser(){
   yiCurrentUser=localStorage.getItem('yi_chess_current')||null;
   updateAcctLink();
@@ -2875,60 +3301,99 @@ function loadCurrentUser(){
 function updateAcctLink(){
   var link=$('acctLink');
   if(!link)return;
-  if(yiCurrentUser){
-    link.textContent='棋手：'+yiCurrentUser+'的战绩';
-  }else{
-    link.textContent='棋手档案';
-  }
+  if(yiCurrentUser)link.textContent='棋手：'+yiCurrentUser+'的战绩';
+  else link.textContent='棋手档案';
 }
 function openAccountModal(){
-  var modal=$('acctModal');
-  if(yiCurrentUser){
-    showRecordsView();
-  }else{
-    showLoginView();
-  }
-  modal.className='show';
+  if(yiCurrentUser)showRecordsView();
+  else showLoginView();
+  $('acctModal').className='show';
 }
-function closeAccountModal(){
-  $('acctModal').className='';
-}
+function closeAccountModal(){$('acctModal').className=''}
 function showLoginView(){
+  var lastId=localStorage.getItem('yi_chess_lastid')||'';
   var html='<div class="acct-card">'+
     '<div class="acct-title">棋手登录</div>'+
-    '<input class="acct-input" id="loginId" placeholder="输入棋手ID" maxlength="20">'+
+    '<div class="acct-subtitle">云端存档 · 跨设备同步</div>'+
+    '<input class="acct-input" id="loginId" placeholder="输入棋手ID" maxlength="20" value="'+lastId.replace(/"/g,'&quot;')+'">'+
     '<input class="acct-input" id="loginPw" type="password" placeholder="输入密码">'+
     '<button class="acct-btn acct-btn-primary" onclick="doLogin()">登 录</button>'+
     '<button class="acct-btn acct-btn-secondary" onclick="showRegisterView()">注册新棋手</button>'+
     '<div class="acct-link"><a onclick="closeAccountModal()">暂不登录，直接对弈</a></div>'+
-    '<div class="acct-hint">棋手ID支持中文、英文、数字</div>'+
+    '<div class="acct-hint">棋手ID支持中文、英文、数字<br>账号云端存储，任意设备均可登录</div>'+
     '</div>';
   $('acctModalContent').innerHTML=html;
+  if(lastId){setTimeout(function(){var el=$('loginPw');if(el)el.focus()},50)}
+  else{setTimeout(function(){var el=$('loginId');if(el)el.focus()},50)}
 }
 function showRegisterView(){
   var html='<div class="acct-card">'+
     '<div class="acct-title">注册棋手</div>'+
+    '<div class="acct-subtitle">创建你的棋手档案</div>'+
     '<input class="acct-input" id="regId" placeholder="设置棋手ID" maxlength="20">'+
     '<input class="acct-input" id="regPw" type="password" placeholder="设置密码">'+
     '<input class="acct-input" id="regPw2" type="password" placeholder="确认密码">'+
     '<button class="acct-btn acct-btn-primary" onclick="doRegister()">注 册</button>'+
     '<button class="acct-btn acct-btn-secondary" onclick="showLoginView()">返回登录</button>'+
-    '<div class="acct-hint">棋手ID支持中文、英文、数字</div>'+
+    '<div class="acct-hint">棋手ID支持中文、英文、数字<br>注册后可在任意设备用ID和密码登录</div>'+
     '</div>';
   $('acctModalContent').innerHTML=html;
+  setTimeout(function(){var el=$('regId');if(el)el.focus()},50);
 }
+function acctLoading(msg){
+  $('acctModalContent').innerHTML='<div class="acct-card" style="text-align:center;padding:50px 40px">'+
+    '<div style="font-size:.85rem;color:var(--ink-s);letter-spacing:3px;margin-bottom:20px">'+msg+'</div>'+
+    '<div style="width:32px;height:32px;border:2.5px solid var(--paper-d);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite;display:inline-block"></div>'+
+    '</div>';
+}
+// 异步登录: 从云端验证 (双重读取应对CDN缓存延迟)
 function doLogin(){
   var id=$('loginId').value.trim();
   var pw=$('loginPw').value;
   if(!id){alert('请输入棋手ID');return}
-  var accounts=getAccounts();
-  if(!accounts[id]){alert('该棋手ID未注册');return}
-  if(accounts[id].password!==pw){alert('密码错误');return}
-  yiCurrentUser=id;
-  localStorage.setItem('yi_chess_current',id);
-  updateAcctLink();
-  showRecordsView();
+  if(!pw){alert('请输入密码');return}
+  acctLoading('正在连接云端...');
+  yiCloudRead().then(function(result){
+    var accounts=result.data.accounts||{};
+    if(accounts[id]){
+      // 找到账号, 验证密码
+      if(accounts[id].pw!==yiHash(pw)){
+        showLoginView();alert('密码错误');return;
+      }
+      yiCurrentUser=id;
+      localStorage.setItem('yi_chess_current',id);
+      localStorage.setItem('yi_chess_lastid',id);
+      saveLocalAcct(accounts[id]);
+      updateAcctLink();
+      showRecordsView();
+    }else{
+      // 第一次未找到, 可能是CDN缓存延迟, 等2秒后再试一次
+      acctLoading('正在同步云端数据...');
+      setTimeout(function(){
+        yiCloudRead().then(function(r2){
+          var accts2=r2.data.accounts||{};
+          if(!accts2[id]){
+            showLoginView();alert('该棋手ID未注册\n\n如刚在其他设备注册，请等待1-2分钟后重试');return;
+          }
+          if(accts2[id].pw!==yiHash(pw)){
+            showLoginView();alert('密码错误');return;
+          }
+          yiCurrentUser=id;
+          localStorage.setItem('yi_chess_current',id);
+          localStorage.setItem('yi_chess_lastid',id);
+          saveLocalAcct(accts2[id]);
+          updateAcctLink();
+          showRecordsView();
+        }).catch(function(e){
+          showLoginView();alert('网络错误，请检查网络后重试');
+        });
+      },2000);
+    }
+  }).catch(function(e){
+    showLoginView();alert('网络错误，请检查网络后重试');
+  });
 }
+// 异步注册: 写入云端
 function doRegister(){
   var id=$('regId').value.trim();
   var pw=$('regPw').value;
@@ -2936,26 +3401,48 @@ function doRegister(){
   if(!id){alert('请输入棋手ID');return}
   if(!pw){alert('请输入密码');return}
   if(pw!==pw2){alert('两次密码不一致');return}
-  var accounts=getAccounts();
-  if(accounts[id]){alert('该棋手ID已被注册');return}
-  accounts[id]={password:pw,records:[]};
-  saveAccounts(accounts);
-  yiCurrentUser=id;
-  localStorage.setItem('yi_chess_current',id);
-  updateAcctLink();
-  showRecordsView();
+  acctLoading('正在注册...');
+  yiCloudRead().then(function(result){
+    var data=result.data, sha=result.sha;
+    data.accounts=data.accounts||{};
+    if(data.accounts[id]){
+      showRegisterView();alert('该棋手ID已被注册');return;
+    }
+    data.accounts[id]={pw:yiHash(pw),records:[]};
+    return yiCloudWrite(data,sha).then(function(){
+      yiCurrentUser=id;
+      localStorage.setItem('yi_chess_current',id);
+      localStorage.setItem('yi_chess_lastid',id);
+      saveLocalAcct(data.accounts[id]);
+      updateAcctLink();
+      showRecordsView();
+    });
+  }).catch(function(e){
+    showRegisterView();alert('注册失败，请检查网络后重试\n\n错误: '+(e&&e.message?e.message:'未知'));
+  });
 }
 function doLogout(){
   yiCurrentUser=null;
   localStorage.removeItem('yi_chess_current');
+  localStorage.removeItem('yi_chess_acct_cache'); // 清除账号缓存, 恢复游客状态
   updateAcctLink();
   closeAccountModal();
 }
+// 战绩界面: 先显示本地缓存, 再从云端更新
 function showRecordsView(){
-  var accounts=getAccounts();
-  var user=accounts[yiCurrentUser];
-  if(!user){doLogout();return}
-  var records=user.records||[];
+  var cached=getLocalAcct();
+  var records=cached?(cached.records||[]):[];
+  renderRecords(records);
+  yiCloudRead().then(function(result){
+    if(!yiCurrentUser)return;
+    var accounts=result.data.accounts||{};
+    if(accounts[yiCurrentUser]){
+      saveLocalAcct(accounts[yiCurrentUser]);
+      renderRecords(accounts[yiCurrentUser].records||[]);
+    }
+  }).catch(function(){});
+}
+function renderRecords(records){
   var wins=0,losses=0,draws=0;
   for(var i=0;i<records.length;i++){
     if(records[i].result==='win')wins++;
@@ -2968,6 +3455,7 @@ function showRecordsView(){
   var diffs=['','入门','进阶','高手','大师'];
   var html='<div class="acct-card" style="max-width:480px">'+
     '<div class="acct-title">棋手：'+yiCurrentUser+'</div>'+
+    '<div class="acct-subtitle">对局战绩</div>'+
     '<div class="acct-stats">'+
     '<div class="acct-stat"><div class="acct-stat-num">'+total+'</div><div class="acct-stat-label">总对局</div></div>'+
     '<div class="acct-stat"><div class="acct-stat-num" style="color:#2d6b4f">'+wins+'</div><div class="acct-stat-label">胜场</div></div>'+
@@ -2997,37 +3485,44 @@ function showRecordsView(){
     '</div>';
   $('acctModalContent').innerHTML=html;
 }
-// 保存战绩到在线账户
+// 保存战绩到云端
 function saveRecordToAccount(){
   if(!yiCurrentUser)return;
-  var accounts=getAccounts();
-  var user=accounts[yiCurrentUser];
-  if(!user)return;
   var result='';
   if(over){
     var ot=$('ot').className;
     if(ot==='win')result='win';
     else if(ot==='lose')result='lose';
     else result='draw';
-  }else{
-    result='unfinished';
-  }
+  }else{result='unfinished'}
   var movesCount=0;
   if(curGame==='gomoku')movesCount=gH.length;
   else if(curGame==='go')movesCount=goHist.length;
   else if(curGame==='xq')movesCount=xqHist.length;
   var now=new Date();
   var dateStr=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  var names={gomoku:'五子棋',go:'围棋',xq:'象棋'};
-  user.records=user.records||[];
-  user.records.unshift({date:dateStr,game:curGame,name:names[curGame],result:result,diff:curDiff,moves:movesCount,playerFirst:playerFirst});
-  if(user.records.length>200)user.records=user.records.slice(0,200);
-  accounts[yiCurrentUser]=user;
-  saveAccounts(accounts);
+  var rec={date:dateStr,game:curGame,result:result,diff:curDiff,moves:movesCount};
+  // 先更新本地缓存
+  var cached=getLocalAcct()||{pw:'',records:[]};
+  cached.records=cached.records||[];
+  cached.records.unshift(rec);
+  if(cached.records.length>200)cached.records=cached.records.slice(0,200);
+  saveLocalAcct(cached);
+  // 异步更新云端
+  yiCloudRead().then(function(result){
+    var data=result.data, sha=result.sha;
+    data.accounts=data.accounts||{};
+    if(!data.accounts[yiCurrentUser])return;
+    data.accounts[yiCurrentUser].records=data.accounts[yiCurrentUser].records||[];
+    data.accounts[yiCurrentUser].records.unshift(rec);
+    if(data.accounts[yiCurrentUser].records.length>200)
+      data.accounts[yiCurrentUser].records=data.accounts[yiCurrentUser].records.slice(0,200);
+    saveLocalAcct(data.accounts[yiCurrentUser]);
+    return yiCloudWrite(data,sha);
+  }).catch(function(){});
 }
-// 游戏结束后询问保存战绩（未登录则静默跳过）
 function askSaveOnlineRecord(){
-  if(!yiCurrentUser)return; // 未登录不询问，游客体验无差别
+  if(!yiCurrentUser)return;
   if(!over)return;
   setTimeout(function(){
     if(confirm('是否保存本次战绩到棋手档案？')){
@@ -3038,6 +3533,6 @@ function askSaveOnlineRecord(){
 
 loadCurrentUser();
 </script>
-<div id="acctModal"><div id="acctModalContent"></div></div>
+<div id="acctModal"><div class="rp-back" onclick="closeAccountModal()" style="color:var(--ink-s);background:var(--paper-w);border-color:var(--paper-d)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M10 3 L5 8 L10 13"/></svg>返回</div><div id="acctModalContent"></div></div>
 </body>
 </html>

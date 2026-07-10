@@ -4,7 +4,8 @@
 
 ### 五子棋 / 围棋 / 象棋 — 三合一 AI 棋类游戏
 
-[![Play Online](https://img.shields.io/badge/Play-Online-8b5e3c?style=for-the-badge)](https://yi-chess007.pages.dev/)
+[![Play Online](https://img.shields.io/badge/Play-Cloudflare-8b5e3c?style=for-the-badge)](https://yi-chess007.pages.dev/)
+[![Play Online](https://img.shields.io/badge/Play-GitHub_Pages-181717?style=for-the-badge&logo=github)](https://liuzufan.github.io/-yi-chess/)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/liuzufan/-yi-chess)
 [![License: MIT](https://img.shields.io/badge/License-MIT-5a7a52?style=for-the-badge)](LICENSE)
 
@@ -116,15 +117,19 @@
 - **自定义命名** — 棋谱列表中可随时重命名对局记录
 - **时间显示** — 回放时显示每步耗时和总时长
 - **回放查看** — 逐步回放整局棋路，支持上一步/下一步/自动播放
-- **自定义播放速度** — 0.5x / 1x / 2x / 4x 四档速度自由切换
+- **自定义播放速度** — 0.5x慢速 / 0.75x / 1x正常 / 1.5x / 2x快速 / 4x极速 六档速度自由切换
 - **AI 实时讲解** — 回放每一步时自动生成 AI 讲解（棋型分析、战术点评、吃子价值评估）
+- **AI 落子建议** — 回放人类着法时，AI 自动分析更优走法并在棋盘上闪烁标记建议位置（三棋类均支持，含坐标提示和箭头指引）
+- **智能播放** — 自动播放时遇到 AI 建议会自动暂停等待闪烁完成再继续
 - **下载 HTML** — 将棋谱导出为独立 HTML 文件，双击即可打开回放，可分享给好友
 
 ### 棋手档案系统
 - **游客模式** — 直接对弈，体验完整，无任何标识差异
 - **棋手登录** — 支持中文/英文/数字 ID 注册，密码无限制
+- **云端账号** — 基于 GitHub API 的跨设备账号系统，任意设备注册即可全球登录
+- **数据隔离** — 登录用户与游客数据完全隔离，退出登录后游客数据完整保留
 - **线上战绩** — 登录后每局可保存战绩，查看总对局数、胜率、历史记录
-- **隐私保护** — 所有数据存储在本地浏览器，不上传服务器
+- **缓存绕过** — 云端读取带时间戳绕过 CDN 缓存，确保跨设备数据同步实时性
 
 ### 视觉设计
 - **中式美学** — 宣纸质感棋盘、木质纹理、毛笔字风格棋子
@@ -139,7 +144,8 @@
 
 ### 在线试玩
 
-直接访问：**[https://yi-chess007.pages.dev/](https://yi-chess007.pages.dev/)**
+- **Cloudflare Pages**：[https://yi-chess007.pages.dev/](https://yi-chess007.pages.dev/)
+- **GitHub Pages**：[https://liuzufan.github.io/-yi-chess/](https://liuzufan.github.io/-yi-chess/)
 
 ### 本地运行
 
@@ -309,7 +315,10 @@ git push origin main
 A: 不会。所有 AI 计算都使用异步分块执行（setTimeout），主线程保持响应，你可以随时点击退出。
 
 **Q: 棋谱会丢失吗？**
-A: 棋谱保存在浏览器 localStorage 中，只要不清除浏览器数据就不会丢失。清除浏览器数据后棋谱会消失。
+A: 棋谱保存在浏览器 localStorage 中，只要不清除浏览器数据就不会丢失。清除浏览器数据后棋谱会消失。登录棋手账号后，棋谱保存在账号专属存储中，与游客数据互不干扰。
+
+**Q: 在另一台设备登录提示"该棋手ID未注册"？**
+A: 这是 GitHub CDN 缓存延迟导致的。系统已内置双重读取机制（首次未找到会自动等2秒重试），如仍提示未注册，请等待1-2分钟后重试即可。
 
 **Q: 下载的 HTML 棋谱怎么用？**
 A: 双击下载的 `.html` 文件，用浏览器打开即可查看回放。文件是完全独立的，可以分享给任何人。
