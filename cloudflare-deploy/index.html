@@ -1616,8 +1616,9 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
   if(oppThreats.severe){
     // 检查玩家实际落子是否防住了对方的严重威胁
     var oppThreatsAfter=rpScanGomokuThreats(opp, p);
-    if(!oppThreatsAfter.severe && !oppThreatsAfter.moderate){
-      // 玩家成功防守了严重威胁，正确！不给建议
+    if(!oppThreatsAfter.severe){
+      // 玩家成功消除了严重威胁(冲四/活四等)，正确！不给建议
+      // 即使还有活三(moderate)也正确，因为堵冲四优先级高于堵活三
       return null;
     }
     // 玩家没防住严重威胁
@@ -1655,8 +1656,8 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
   // 情况E: 对方有一般威胁(活三) -> 通常需要防守
   if(oppThreats.moderate){
     var oppThreatsAfter2=rpScanGomokuThreats(opp, p);
-    if(!oppThreatsAfter2.moderate && !oppThreatsAfter2.severe){
-      // 玩家防住了活三，正确！
+    if(!oppThreatsAfter2.severe && !oppThreatsAfter2.moderate){
+      // 玩家防住了活三且无其他威胁，正确！
       return null;
     }
     // 玩家没防住活三
@@ -1763,6 +1764,10 @@ function rpCanGomokuWinNext(color){
 // 扫描五子棋对方威胁等级(在当前棋盘上)
 function rpScanGomokuThreats(opp, my){
   var severe=false, moderate=false, desc='';
+  // 最高优先级: 检测对方下一步能否连五(包括活四和冲四)
+  if(rpCanGomokuWinNext(opp)){
+    return {severe:true, moderate:false, desc:'冲四(对方下一步可连五)'};
+  }
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
     if(gB[y][x]!==opp)continue;
     var pc=gPatCount(gB, x, y, opp);
