@@ -404,6 +404,9 @@ function openRPViewer(id){
 }
 function closeRPViewer(){
   replayMode=false;
+  rpComebackMode=false;
+  rpComebackData=null;
+  rpComebackStep=0;
   if(replayTimer){clearTimeout(replayTimer);replayTimer=null}
   if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
   $('rpviewer').classList.remove('show');
@@ -458,6 +461,13 @@ function rpStartAuto(){
 function rpStep(dir){
   if(!replayData)return;
   if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
+  // 转败为胜模式: 使用专用步进
+  if(rpComebackMode){
+    if(dir===0){rpStopAuto();return}
+    if(rpTimer){clearTimeout(rpTimer);rpTimer=null}
+    rpComebackStep_(dir);
+    return;
+  }
   var total=replayData.moves.length;
   if(dir===0){
     // 自动播放: 切换播放/暂停
@@ -511,6 +521,15 @@ function rpShowComment(idx, goCaptured){
   }
   var html=whoTag+cmt;
   if(suggestion){
+    // 深度验证: 模拟对手反击，检查建议是否成立
+    if(suggestion.x!==undefined && !suggestion.verified){
+      var verified=rpVerifySuggestion(replayData.game, suggestion, m, idx);
+      if(!verified){
+        suggestion=null; // 建议不成立，放弃
+      }
+    }
+  }
+  if(suggestion){
     html+='<br><span style="color:#8b5e3c;font-size:.76rem;margin-top:4px;display:inline-block">💡 '+suggestion.text+'</span>';
     // 在棋盘上绘制: 玩家实际落子半透明 + AI建议位置闪烁
     if(suggestion.x!==undefined){
@@ -525,7 +544,781 @@ function rpShowComment(idx, goCaptured){
   }
   el.innerHTML=html;
 }
-// 在回放棋盘上绘制: 玩家实际落子半透明 + AI建议位置闪烁对比
+
+// ============================================================
+//  AI建议深度验证 — 模拟对手反击，确保建议成立
+// ============================================================
+function rpVerifySuggestion(game, sugg, actualMove, idx){
+  if(game==='gomoku')return rpVerifyGomokuSugg(sugg, actualMove);
+  if(game==='go')return rpVerifyGoSugg(sugg, actualMove);
+  if(game==='xq')return rpVerifyXQSugg(sugg, actualMove);
+  return true;
+}
+// 五子棋建议验证: 模拟对手最佳反击
+function rpVerifyGomokuSugg(sugg, actualMove){
+  var p=replayData.playerFirst?1:2;
+  var opp=p===1?2:1;
+  var suggX=sugg.x, suggY=sugg.y;
+  // 1. 放置建议棋子，检查对手最佳反击
+  if(gB[suggY][suggX]!==0)return false;
+  gB[suggY][suggX]=p;
+  // 搜索对手最佳反击点
+  var oppBest=rpGomokuBestReply(opp, p);
+  // 模拟对手反击
+  if(oppBest){
+    gB[oppBest.y][oppBest.x]=opp;
+    // 检查对手反击后是否形成更大威胁
+    var oppPC=gPatCount(gB, oppBest.x, oppBest.y, opp);
+    // 如果对手能形成活四或双活三，建议不成立
+    if(oppPC.LIVE_FOUR>0 || oppPC.LIVE_THREE>=2){
+      gB[oppBest.y][oppBest.x]=0;
+      gB[suggY][suggX]=0;
+      return false;
+    }
+    // 检查我方建议位置是否仍有价值
+    var myPC=gPatCount(gB, suggX, suggY, p);
+    if(myPC.LIVE_FOUR===0 && myPC.LIVE_THREE===0 && myPC.RUSH_FOUR===0){
+      // 建议位置在对手反击后既无活四也无活三冲四，价值不够
+      gB[oppBest.y][oppBest.x]=0;
+      gB[suggY][suggX]=0;
+      // 但如果是防守建议，仍然有效
+      if(sugg.text && sugg.text.indexOf('防守')>=0)return true;
+      return false;
+    }
+    gB[oppBest.y][oppBest.x]=0;
+  }
+  gB[suggY][suggX]=0;
+  return true;
+}
+// 五子棋: 找对手最佳反击点(简化搜索)
+function rpGomokuBestReply(opp, my){
+  var best=null, bestScore=0;
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==0)continue;
+    gB[y][x]=opp;
+    var pc=gPatCount(gB, x, y, opp);
+    gB[y][x]=0;
+    var score=pc.LIVE_FOUR*1000+pc.RUSH_FOUR*200+pc.LIVE_THREE*100+pc.SLEEP_THREE*30+pc.LIVE_TWO*10;
+    // 也考虑防守分
+    gB[y][x]=my;
+    var dpc=gPatCount(gB, x, y, my);
+    gB[y][x]=0;
+    var defScore=dpc.LIVE_FOUR*1000+dpc.RUSH_FOUR*200+dpc.LIVE_THREE*100;
+    var total=Math.max(score, defScore*0.9);
+    if(total>bestScore){bestScore=total;best={x:x,y:y}}
+  }
+  return best;
+}
+// 围棋建议验证: 检查建议位置是否会被立即提子
+function rpVerifyGoSugg(sugg, actualMove){
+  // 简化验证: 检查建议位置落子后是否自陷死地
+  var myColor=replayData.playerFirst?1:2;
+  var testB=[];
+  for(var i=0;i<GSZ;i++)testB.push(goB[i].slice());
+  var r=goTry(testB, sugg.x, sugg.y, myColor, goKo);
+  if(!r.valid)return false;
+  testB=r.newBoard;
+  // 检查落子后己方棋串气数
+  var info=rpGoGroupInfoOnBoard(testB, sugg.x, sugg.y, myColor);
+  if(info.libs===0)return false; // 自杀，不成立
+  if(info.libs===1){
+    // 只剩1气，容易被提，检查对方是否能立即提
+    var oppColor=myColor===1?2:1;
+    for(var d=0;d<4;d++){
+      var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+      var nx=sugg.x+dirs[d][0], ny=sugg.y+dirs[d][1];
+      if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+      if(testB[nx][ny]===0){
+        var testR=goTry(testB, nx, ny, oppColor, null);
+        if(testR.valid){
+          var afterB=testR.newBoard;
+          var afterInfo=rpGoGroupInfoOnBoard(afterB, sugg.x, sugg.y, myColor);
+          if(afterInfo.libs===0)return false; // 会被提
+        }
+      }
+    }
+  }
+  return true;
+}
+function rpGoGroupInfoOnBoard(board, x, y, color){
+  if(board[x][y]!==color)return {libs:0};
+  var visited={};
+  var stack=[[x,y]];
+  var libs=0;
+  while(stack.length>0){
+    var pos=stack.pop();
+    var key=pos[0]+','+pos[1];
+    if(visited[key])continue;
+    visited[key]=1;
+    var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+    for(var d=0;d<4;d++){
+      var nx=pos[0]+dirs[d][0],ny=pos[1]+dirs[d][1];
+      if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+      if(board[nx][ny]===0)libs++;
+      else if(board[nx][ny]===color&&!visited[nx+','+ny])stack.push([nx,ny]);
+    }
+  }
+  return {libs:libs};
+}
+// 象棋建议验证: 模拟对手反击，检查是否丢子
+function rpVerifyXQSugg(sugg, actualMove){
+  var playerIsRed=replayData.playerFirst;
+  var suggX=sugg.x, suggY=sugg.y;
+  var fromX=sugg.fromX, fromY=sugg.fromY;
+  if(fromX===undefined)return true; // 非走法建议(如"大子微调")
+  // 1. 执行建议走法
+  var savedBoard=[];
+  for(var i=0;i<xqB.length;i++)savedBoard.push(xqB[i].slice());
+  var piece=xqB[fromY][fromX];
+  var cap=xqB[suggY][suggX];
+  xqB[suggY][suggX]=piece;
+  xqB[fromY][fromX]=0;
+  // 2. 检查走法后是否被将军
+  if(xqCheck(xqB, playerIsRed)){
+    xqB=savedBoard;
+    return false; // 走法后仍被将军，不成立
+  }
+  // 3. 模拟对手最佳反击: 找最大吃子
+  var oppMoves=xqLegalMoves(xqB, !playerIsRed);
+  var bestCapture=null, bestCapVal=0;
+  for(var i2=0;i2<oppMoves.length;i2++){
+    var mv=oppMoves[i2];
+    if(mv.captured && mv.captured!==0){
+      var val=XV[mv.captured]||0;
+      if(val>bestCapVal){bestCapVal=val;bestCapture=mv}
+    }
+  }
+  // 4. 如果对手能吃我方大子(>=400)，检查我方能否反吃或是否值得
+  if(bestCapture && bestCapVal>=400){
+    // 检查我方走法吃到的子价值
+    var myCapVal=cap?XV[cap]||0:0;
+    // 如果我方没吃到东西(0)但对方能吃我大子(>=400)，建议不成立
+    if(myCapVal===0 && bestCapVal>=400){
+      // 除非这是防守建议
+      if(sugg.text && sugg.text.indexOf('防守')>=0){
+        xqB=savedBoard;
+        return true;
+      }
+      xqB=savedBoard;
+      return false;
+    }
+    // 如果对方吃的比我吃的大，不成立
+    if(bestCapVal>myCapVal){
+      xqB=savedBoard;
+      return false;
+    }
+  }
+  xqB=savedBoard;
+  return true;
+}
+
+// ============================================================
+//  转败为胜分析 — 找转折点 + 生成AI替代棋路
+// ============================================================
+var rpComebackData=null; // 转败为胜分析结果
+var rpComebackMode=false; // 是否在转败为胜模式
+var rpComebackStep=0; // 转败为胜模式下的当前步
+
+function rpAnalyzeComeback(){
+  if(!replayData)return;
+  var result=replayData.result;
+  if(result!=='lose'){
+    alert('只有输掉的棋局才能进行转败为胜分析');
+    return;
+  }
+  var btn=$('rpcomebackbtn');
+  if(btn)btn.textContent='分析中...';
+  // 异步执行，避免UI卡顿
+  setTimeout(function(){
+    var analysis=null;
+    if(replayData.game==='gomoku')analysis=rpGomokuComeback();
+    else if(replayData.game==='go')analysis=rpGoComeback();
+    else if(replayData.game==='xq')analysis=rpXQComeback();
+    if(!analysis){
+      if(btn)btn.textContent='分析失败';
+      alert('未能生成转败为胜分析，可能是棋局步数太少');
+      return;
+    }
+    rpComebackData=analysis;
+    rpComebackMode=true;
+    rpComebackStep=0;
+    if(btn)btn.textContent='退出转败为胜';
+    // 重置到转折点
+    replayStep=analysis.turningPoint;
+    rpRebuildTo(replayStep);
+    rpUpdateStep();
+    rpShowComebackComment();
+  },100);
+}
+
+function rpToggleComeback(){
+  if(!rpComebackMode){
+    rpAnalyzeComeback();
+  }else{
+    rpComebackMode=false;
+    rpComebackData=null;
+    rpComebackStep=0;
+    var btn=$('rpcomebackbtn');
+    if(btn)btn.textContent='🔍 转败为胜';
+    // 恢复到原始回放
+    rpRebuildTo(replayStep);
+    rpShowComment(replayStep-1,0);
+  }
+}
+
+// 转败为胜模式下的步进
+function rpComebackStep_(dir){
+  if(!rpComebackData)return;
+  var tp=rpComebackData.turningPoint;
+  var altLen=rpComebackData.altMoves.length;
+  if(dir>0){
+    if(rpComebackStep<altLen){
+      // 应用AI替代走法
+      var altM=rpComebackData.altMoves[rpComebackStep];
+      rpApplyAltMove(altM);
+      rpComebackStep++;
+    }
+  }else if(dir<0){
+    if(rpComebackStep>0){
+      rpComebackStep--;
+      // 重建到转折点+当前AI步数
+      rpRebuildToComeback(tp+rpComebackStep);
+    }
+  }
+  rpShowComebackComment();
+}
+
+function rpShowComebackComment(){
+  var el=$('rpvcomment');
+  if(!el||!rpComebackData)return;
+  var tp=rpComebackData.turningPoint;
+  var total=tp+rpComebackData.altMoves.length;
+  var stepTxt='第'+(tp+rpComebackStep+1)+'手';
+  if(rpComebackStep===0){
+    el.innerHTML='<span style="color:var(--accent);font-weight:bold">🔍 转败为胜分析</span><br>'+
+      '<span style="color:var(--ink-s)">'+rpComebackData.reason+'</span><br>'+
+      '<span style="color:#8b5e3c;font-size:.76rem;margin-top:4px;display:inline-block">从第'+(tp+1)+'手开始，AI将替代你的棋路进行演示。点击「下一步」查看AI的应对策略</span>';
+  }else{
+    var altM=rpComebackData.altMoves[rpComebackStep-1];
+    var who=altM.isPlayer?'<span class="rp-who rp-human">AI替代你</span> ':'<span class="rp-who rp-ai">AI模拟对手</span> ';
+    el.innerHTML=who+altM.comment;
+  }
+  $('rpvstep').textContent=(tp+rpComebackStep)+'/'+total+' (转败为胜)';
+}
+
+function rpApplyAltMove(altM){
+  if(replayData.game==='gomoku'){
+    gB[altM.y][altM.x]=altM.p;
+    gLast={x:altM.x,y:altM.y};
+    drawGomoku();
+  }else if(replayData.game==='go'){
+    var r=goTry(goB,altM.x,altM.y,altM.c,goKo);
+    if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:altM.x,y:altM.y,c:altM.c}}
+    drawGo();
+  }else if(replayData.game==='xq'){
+    xqB[altM.tr][altM.tc]=altM.piece;
+    xqB[altM.fr][altM.fc]=0;
+    xqSel=null;xqLegal=[];
+    drawXQ();
+  }
+}
+
+function rpRebuildToComeback(stepCount){
+  var tp=rpComebackData.turningPoint;
+  // 重建到转折点
+  if(replayData.game==='gomoku'){
+    gB=[];for(var i=0;i<GS;i++)gB.push(new Array(GS).fill(0));
+    gLast=null;
+    for(var i2=0;i2<tp;i2++){
+      var m=replayData.moves[i2];
+      gB[m.y][m.x]=m.p;
+    }
+    if(tp>0){var lm=replayData.moves[tp-1];gLast={x:lm.x,y:lm.y}}
+    // 加上AI替代走法
+    for(var i3=0;i3<rpComebackStep;i3++){
+      var am=rpComebackData.altMoves[i3];
+      gB[am.y][am.x]=am.p;
+      gLast={x:am.x,y:am.y};
+    }
+    drawGomoku();
+  }else if(replayData.game==='go'){
+    goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));
+    goKo=null;goLast=null;
+    for(var i2=0;i2<tp;i2++){
+      var m=replayData.moves[i2];
+      var r=goTry(goB,m.x,m.y,m.c,goKo);
+      if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:m.x,y:m.y,c:m.c}}
+    }
+    for(var i3=0;i3<rpComebackStep;i3++){
+      var am=rpComebackData.altMoves[i3];
+      var r2=goTry(goB,am.x,am.y,am.c,goKo);
+      if(r2.valid){goB=r2.newBoard;goKo=r2.newKo;goLast={x:am.x,y:am.y,c:am.c}}
+    }
+    drawGo();
+  }else if(replayData.game==='xq'){
+    xqB=xqInitBoard();xqSel=null;xqLegal=[];
+    for(var i2=0;i2<tp;i2++){
+      var m=replayData.moves[i2];
+      xqB[m.tr][m.tc]=m.piece;
+      xqB[m.fr][m.fc]=0;
+    }
+    for(var i3=0;i3<rpComebackStep;i3++){
+      var am=rpComebackData.altMoves[i3];
+      xqB[am.tr][am.tc]=am.piece;
+      xqB[am.fr][am.fc]=0;
+    }
+    drawXQ();
+  }
+}
+
+// === 五子棋转败为胜分析 ===
+function rpGomokuComeback(){
+  var moves=replayData.moves;
+  var p=replayData.playerFirst?1:2;
+  var opp=p===1?2:1;
+  if(moves.length<6)return null;
+  // 1. 找转折点: 逐步回放，评估每步后的局面
+  var evaluations=[];
+  var tempB=[];
+  for(var i=0;i<GS;i++)tempB.push(new Array(GS).fill(0));
+  for(var i2=0;i2<moves.length;i2++){
+    var m=moves[i2];
+    tempB[m.y][m.x]=m.p;
+    // 评估局面 (玩家视角，正数=玩家优势)
+    var evalScore=rpEvalGomokuPos(tempB, p, opp);
+    evaluations.push({idx:i2, eval:evalScore, isPlayer:m.p===p});
+  }
+  // 2. 找最大的劣势转折: 玩家走法后局面急剧恶化
+  var turningPoint=-1, worstDrop=0;
+  for(var i3=0;i3<evaluations.length;i3++){
+    if(!evaluations[i3].isPlayer)continue;
+    var prevEval=i3>0?evaluations[i3-1].eval:0;
+    var drop=prevEval-evaluations[i3].eval;
+    if(drop>worstDrop){
+      worstDrop=drop;
+      turningPoint=i3;
+    }
+  }
+  // 如果没找到明显转折点，找第一个玩家走法后局面变为负数的位置
+  if(turningPoint<0){
+    for(var i4=0;i4<evaluations.length;i4++){
+      if(evaluations[i4].isPlayer && evaluations[i4].eval<-100){
+        turningPoint=i4;
+        break;
+      }
+    }
+  }
+  if(turningPoint<0)turningPoint=Math.floor(moves.length/2); // 兜底: 中间位置
+  // 3. 从转折点开始生成AI替代棋路
+  // 重建棋盘到转折点前
+  var comebackB=[];
+  for(var i5=0;i5<GS;i5++)comebackB.push(new Array(GS).fill(0));
+  for(var i6=0;i6<turningPoint;i6++){
+    var m6=moves[i6];
+    comebackB[m6.y][m6.x]=m6.p;
+  }
+  // 4. 生成替代走法(最多20手)
+  var altMoves=[];
+  var savedGB=gB;
+  gB=comebackB;
+  for(var step=0;step<20;step++){
+    // 判断该谁走
+    var prevMove=turningPoint+step>0?moves[turningPoint+step-1]:null;
+    // 第step=0时，该玩家走(替代转折点这一步)
+    var isPlayerStep=(step%2===0);
+    var curColor=isPlayerStep?p:opp;
+    var bestM=rpGomokuBestForComeback(curColor, isPlayerStep?p:opp);
+    if(!bestM)break;
+    gB[bestM.y][bestM.x]=curColor;
+    // 检查是否连五
+    var pc=gPatCount(gB, bestM.x, bestM.y, curColor);
+    var comment='';
+    if(isPlayerStep){
+      if(pc.FIVE>0){
+        comment='连五获胜！'+rpGomokuComebackReason(bestM, pc, true);
+        altMoves.push({x:bestM.x,y:bestM.y,p:curColor,isPlayer:true,comment:comment});
+        break;
+      }
+      comment=rpGomokuComebackReason(bestM, pc, true);
+    }else{
+      if(pc.FIVE>0){
+        comment='对手连五，AI模拟失败';
+        altMoves.push({x:bestM.x,y:bestM.y,p:curColor,isPlayer:false,comment:comment});
+        break;
+      }
+      comment=rpGomokuComebackReason(bestM, pc, false);
+    }
+    altMoves.push({x:bestM.x,y:bestM.y,p:curColor,isPlayer:isPlayerStep,comment:comment});
+    // 如果连续5步后玩家优势明显，可以提前结束
+    if(step>=6){
+      var evalNow=rpEvalGomokuPos(gB, p, opp);
+      if(evalNow>500)break;
+    }
+  }
+  gB=savedGB;
+  if(altMoves.length===0)return null;
+  // 恢复棋盘到转折点
+  var savedGB2=gB;
+  gB=[];
+  for(var i7=0;i7<GS;i7++)gB.push(new Array(GS).fill(0));
+  for(var i8=0;i8<turningPoint;i8++){
+    var m8=moves[i8];
+    gB[m8.y][m8.x]=m8.p;
+  }
+  var actualMove=moves[turningPoint];
+  var actualPC=gPatCount(gB, actualMove.x, actualMove.y, p);
+  gB=savedGB2;
+  return {
+    turningPoint: turningPoint,
+    reason: '第'+(turningPoint+1)+'手是转折点。你此手仅'+rpPCDesc(actualPC)+'，局面开始恶化。以下是AI的替代方案，展示如何从这一步开始扭转局势：',
+    altMoves: altMoves
+  };
+}
+function rpGomokuComebackReason(m, pc, isPlayer){
+  if(pc.FIVE>0)return '连五获胜';
+  if(pc.LIVE_FOUR>0)return '形成活四，对手无法阻止连五';
+  if(pc.RUSH_FOUR>0)return '形成冲四，迫使对手应招';
+  if(pc.LIVE_THREE>=2)return '形成双活三，双线威胁';
+  if(pc.LIVE_THREE>0)return '形成活三，持续施压';
+  if(pc.SLEEP_THREE>0)return '形成眠三，埋伏待发';
+  if(pc.LIVE_TWO>0)return '形成活二，积蓄攻势';
+  return '占据要点，控制局势';
+}
+// 五子棋: 为转败为胜生成最佳走法(攻防一体)
+function rpGomokuBestForComeback(p, opp){
+  var best=null, bestScore=0;
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==0)continue;
+    // 进攻分
+    gB[y][x]=p;
+    var pc=gPatCount(gB, x, y, p);
+    gB[y][x]=0;
+    var offScore=pc.LIVE_FOUR*1000+pc.RUSH_FOUR*200+pc.LIVE_THREE*100+pc.SLEEP_THREE*30+pc.LIVE_TWO*10;
+    // 防守分(堵对方)
+    gB[y][x]=opp;
+    var dpc=gPatCount(gB, x, y, opp);
+    gB[y][x]=0;
+    var defScore=dpc.LIVE_FOUR*1000+dpc.RUSH_FOUR*200+dpc.LIVE_THREE*100+dpc.SLEEP_THREE*30+dpc.LIVE_TWO*10;
+    // 综合: 防守略低于进攻(0.9倍)，但当对方有活四时防守优先
+    var total;
+    if(dpc.LIVE_FOUR>0||dpc.RUSH_FOUR>0){
+      total=Math.max(offScore, defScore);
+    }else{
+      total=Math.max(offScore, defScore*0.85);
+    }
+    if(total>bestScore){bestScore=total;best={x:x,y:y}}
+  }
+  return best;
+}
+// 五子棋局面评估
+function rpEvalGomokuPos(board, p, opp){
+  var myScore=0, oppScore=0;
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(board[y][x]===p){
+      var savedB=gB;
+      gB=board;
+      var pc=gPatCount(gB, x, y, p);
+      gB=savedB;
+      myScore+=pc.LIVE_FOUR*1000+pc.RUSH_FOUR*200+pc.LIVE_THREE*100+pc.SLEEP_THREE*30+pc.LIVE_TWO*10;
+    }else if(board[y][x]===opp){
+      var savedB2=gB;
+      gB=board;
+      var pc2=gPatCount(gB, x, y, opp);
+      gB=savedB2;
+      oppScore+=pc2.LIVE_FOUR*1000+pc2.RUSH_FOUR*200+pc2.LIVE_THREE*100+pc2.SLEEP_THREE*30+pc2.LIVE_TWO*10;
+    }
+  }
+  return myScore-oppScore;
+}
+
+// === 围棋转败为胜分析 ===
+function rpGoComeback(){
+  var moves=replayData.moves;
+  var p=replayData.playerFirst?1:2;
+  var opp=p===1?2:1;
+  if(moves.length<6)return null;
+  // 评估每步后的局面(简化: 棋子数+气数)
+  var evaluations=[];
+  var tempB=[];
+  for(var i=0;i<GSZ;i++)tempB.push(new Array(GSZ).fill(0));
+  var ko=null;
+  for(var i2=0;i2<moves.length;i2++){
+    var m=moves[i2];
+    var r=goTry(tempB,m.x,m.y,m.c,ko);
+    if(r.valid){tempB=r.newBoard;ko=r.newKo}
+    var evalScore=rpEvalGoPos(tempB, p, opp);
+    evaluations.push({idx:i2, eval:evalScore, isPlayer:m.c===p});
+  }
+  // 找转折点
+  var turningPoint=-1, worstDrop=0;
+  for(var i3=0;i3<evaluations.length;i3++){
+    if(!evaluations[i3].isPlayer)continue;
+    var prevEval=i3>0?evaluations[i3-1].eval:0;
+    var drop=prevEval-evaluations[i3].eval;
+    if(drop>worstDrop){worstDrop=drop;turningPoint=i3}
+  }
+  if(turningPoint<0){
+    for(var i4=0;i4<evaluations.length;i4++){
+      if(evaluations[i4].isPlayer && evaluations[i4].eval<-10){
+        turningPoint=i4;break;
+      }
+    }
+  }
+  if(turningPoint<0)turningPoint=Math.floor(moves.length/2);
+  // 生成替代走法
+  var comebackB=[];
+  for(var i5=0;i5<GSZ;i5++)comebackB.push(new Array(GSZ).fill(0));
+  var cbKo=null;
+  for(var i6=0;i6<turningPoint;i6++){
+    var m6=moves[i6];
+    var r6=goTry(comebackB,m6.x,m6.y,m6.c,cbKo);
+    if(r6.valid){comebackB=r6.newBoard;cbKo=r6.newKo}
+  }
+  var altMoves=[];
+  var savedGoB=goB, savedGoKo=goKo;
+  goB=comebackB;goKo=cbKo;
+  for(var step=0;step<20;step++){
+    var isPlayerStep=(step%2===0);
+    var curColor=isPlayerStep?p:opp;
+    var bestM=rpGoBestForComeback(curColor, isPlayerStep?p:opp);
+    if(!bestM)break;
+    var r=goTry(goB,bestM.x,bestM.y,curColor,goKo);
+    if(!r.valid)break;
+    goB=r.newBoard;goKo=r.newKo;
+    var comment;
+    if(isPlayerStep){
+      comment=rpGoComebackReason(bestM, curColor);
+    }else{
+      comment=rpGoComebackReason(bestM, curColor);
+    }
+    altMoves.push({x:bestM.x,y:bestM.y,c:curColor,isPlayer:isPlayerStep,comment:comment});
+    if(step>=8){
+      var evalNow=rpEvalGoPos(goB, p, opp);
+      if(evalNow>30)break;
+    }
+  }
+  goB=savedGoB;goKo=savedGoKo;
+  if(altMoves.length===0)return null;
+  return {
+    turningPoint: turningPoint,
+    reason: '第'+(turningPoint+1)+'手是转折点。此后局面逐渐失控。以下是AI的替代方案，展示如何从这一步开始扭转局势：',
+    altMoves: altMoves
+  };
+}
+function rpGoComebackReason(m, color){
+  // 检查附近棋形
+  var info=rpGoGroupInfo(m.x, m.y, color);
+  if(info.libs<=2)return '紧气攻击对方弱棋';
+  // 检查是否在围空
+  var nearMy=false;
+  for(var dx=-1;dx<=1;dx++)for(var dy=-1;dy<=1;dy++){
+    var nx=m.x+dx,ny=m.y+dy;
+    if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ&&goB[nx][ny]===color)nearMy=true;
+  }
+  if(nearMy)return '配合己方棋子，巩固地盘';
+  return '抢占要点，拓展势力';
+}
+function rpGoBestForComeback(myColor, oppColor){
+  // 简化: 找能攻击对方弱棋或扩张己方的最佳点
+  var best=null, bestScore=0;
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]!==0)continue;
+    var r=goTry(goB,x,y,myColor,goKo);
+    if(!r.valid)continue;
+    var testB=r.newBoard;
+    var score=0;
+    // 检查是否攻击对方弱棋
+    for(var dx=-2;dx<=2;dx++)for(var dy=-2;dy<=2;dy++){
+      var nx=x+dx,ny=y+dy;
+      if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+      if(testB[nx][ny]===oppColor){
+        var info=rpGoGroupInfoOnBoard(testB,nx,ny,oppColor);
+        if(info.libs<=2)score+=50-info.libs*10;
+      }
+    }
+    // 检查是否围空
+    for(var dx2=-1;dx2<=1;dx2++)for(var dy2=-1;dy2<=1;dy2++){
+      var nx2=x+dx2,ny2=y+dy2;
+      if(nx2>=0&&nx2<GSZ&&ny2>=0&&ny2<GSZ&&goB[nx2][ny2]===myColor)score+=5;
+    }
+    // 边角加分
+    if(x<=2||x>=16||y<=2||y>=16)score+=3;
+    if(score>bestScore){bestScore=score;best={x:x,y:y}}
+  }
+  return best;
+}
+function rpEvalGoPos(board, p, opp){
+  var myCount=0, oppCount=0, myLibs=0, oppLibs=0;
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(board[x][y]===p)myCount++;
+    else if(board[x][y]===opp)oppCount++;
+  }
+  // 简化评估: 棋子数差 + 危险棋串惩罚
+  var myDanger=0, oppDanger=0;
+  var visited={};
+  for(var x2=0;x2<GSZ;x2++)for(var y2=0;y2<GSZ;y2++){
+    if(board[x2][y2]===0||visited[x2+','+y2])continue;
+    var c=board[x2][y2];
+    var info=rpGoGroupInfoOnBoard(board,x2,y2,c);
+    // 标记已访问
+    var stack=[[x2,y2]];
+    while(stack.length>0){
+      var pos=stack.pop();
+      if(visited[pos[0]+','+pos[1]])continue;
+      visited[pos[0]+','+pos[1]]=1;
+      var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+      for(var d=0;d<4;d++){
+        var nx=pos[0]+dirs[d][0],ny=pos[1]+dirs[d][1];
+        if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ&&board[nx][ny]===c&&!visited[nx+','+ny])stack.push([nx,ny]);
+      }
+    }
+    if(info.libs<=2){
+      if(c===p)myDanger+=(3-info.libs)*5;
+      else oppDanger+=(3-info.libs)*5;
+    }
+  }
+  return (myCount-oppCount)+(oppDanger-myDanger);
+}
+
+// === 象棋转败为胜分析 ===
+function rpXQComeback(){
+  var moves=replayData.moves;
+  var playerIsRed=replayData.playerFirst;
+  if(moves.length<6)return null;
+  // 评估每步后的局面(子力差)
+  var evaluations=[];
+  var tempB=xqInitBoard();
+  for(var i=0;i<moves.length;i++){
+    var m=moves[i];
+    tempB[m.tr][m.tc]=m.piece;
+    tempB[m.fr][m.fc]=0;
+    var evalScore=rpEvalXQPos(tempB, playerIsRed);
+    var isPlayer=xqRedP(m.piece)===playerIsRed;
+    evaluations.push({idx:i, eval:evalScore, isPlayer:isPlayer});
+  }
+  // 找转折点
+  var turningPoint=-1, worstDrop=0;
+  for(var i2=0;i2<evaluations.length;i2++){
+    if(!evaluations[i2].isPlayer)continue;
+    var prevEval=i2>0?evaluations[i2-1].eval:0;
+    var drop=prevEval-evaluations[i2].eval;
+    if(drop>worstDrop){worstDrop=drop;turningPoint=i2}
+  }
+  if(turningPoint<0){
+    for(var i3=0;i3<evaluations.length;i3++){
+      if(evaluations[i3].isPlayer && evaluations[i3].eval<-100){
+        turningPoint=i3;break;
+      }
+    }
+  }
+  if(turningPoint<0)turningPoint=Math.floor(moves.length/2);
+  // 生成替代走法
+  var comebackB=xqInitBoard();
+  for(var i4=0;i4<turningPoint;i4++){
+    var m4=moves[i4];
+    comebackB[m4.tr][m4.tc]=m4.piece;
+    comebackB[m4.fr][m4.fc]=0;
+  }
+  var altMoves=[];
+  var savedXQ=xqB;
+  xqB=comebackB;
+  for(var step=0;step<20;step++){
+    var isPlayerStep=(step%2===0);
+    var curRed=isPlayerStep?playerIsRed:!playerIsRed;
+    var bestM=rpXQBestForComeback(curRed);
+    if(!bestM)break;
+    var piece=xqB[bestM.fr][bestM.fc];
+    var cap=xqB[bestM.tr][bestM.tc];
+    xqB[bestM.tr][bestM.tc]=piece;
+    xqB[bestM.fr][bestM.fc]=0;
+    var col='abcdefghi';
+    var desc=XC_H[piece]+'('+col[bestM.fc]+(10-bestM.fr)+'→'+col[bestM.tc]+(10-bestM.tr)+')';
+    var comment;
+    if(isPlayerStep){
+      comment=desc;
+      if(cap&&cap!==0)comment+='，吃对方'+XC_H[cap];
+    }else{
+      comment=desc;
+      if(cap&&cap!==0)comment+='，吃你'+XC_H[cap];
+    }
+    altMoves.push({fr:bestM.fr,fc:bestM.fc,tr:bestM.tr,tc:bestM.tc,piece:piece,isPlayer:isPlayerStep,comment:comment});
+    // 检查是否将死
+    if(xqCheck(xqB, !curRed)){
+      // 检查是否无解
+      var escapeMoves=xqLegalMoves(xqB, !curRed);
+      var canEscape=false;
+      for(var e=0;e<escapeMoves.length;e++){
+        var em=escapeMoves[e];
+        var ep=xqB[em.fr][em.fc];
+        var ec=xqB[em.tr][em.tc];
+        xqB[em.tr][em.tc]=ep;xqB[em.fr][em.fc]=0;
+        if(!xqCheck(xqB, !curRed))canEscape=true;
+        xqB[em.fr][em.fc]=ep;xqB[em.tr][em.tc]=ec;
+        if(canEscape)break;
+      }
+      if(!canEscape){
+        altMoves[altMoves.length-1].comment=comment+'，将军！对方无解，将死获胜';
+        break;
+      }
+    }
+    if(step>=8){
+      var evalNow=rpEvalXQPos(xqB, playerIsRed);
+      if(evalNow>300)break;
+    }
+  }
+  xqB=savedXQ;
+  if(altMoves.length===0)return null;
+  return {
+    turningPoint: turningPoint,
+    reason: '第'+(turningPoint+1)+'手是转折点。此后子力劣势扩大。以下是AI的替代方案，展示如何从这一步开始扭转局势：',
+    altMoves: altMoves
+  };
+}
+function rpXQBestForComeback(isRed){
+  var allMoves=xqLegalMoves(xqB, isRed);
+  if(allMoves.length===0)return null;
+  var best=null, bestScore=-99999;
+  for(var i=0;i<allMoves.length;i++){
+    var mv=allMoves[i];
+    var piece=xqB[mv.fr][mv.fc];
+    var cap=xqB[mv.tr][mv.tc];
+    // 执行走法
+    xqB[mv.tr][mv.tc]=piece;
+    xqB[mv.fr][mv.fc]=0;
+    // 检查是否被将军(不能送将)
+    if(xqCheck(xqB, isRed)){
+      xqB[mv.fr][mv.fc]=piece;
+      xqB[mv.tr][mv.tc]=cap;
+      continue;
+    }
+    var score=0;
+    // 吃子加分
+    if(cap&&cap!==0)score+=XV[cap]||0;
+    // 被反吃扣分
+    if(xqCanCapture(xqB, !isRed, mv.tr, mv.tc)){
+      score-=XV[piece]||0;
+    }
+    // 将军加分
+    if(xqCheck(xqB, !isRed))score+=50;
+    // 位置评估
+    score+=(isRed?(mv.tr<5?2:0):(mv.tr>4?2:0));
+    xqB[mv.fr][mv.fc]=piece;
+    xqB[mv.tr][mv.tc]=cap;
+    if(score>bestScore){bestScore=score;best=mv}
+  }
+  return best;
+}
+function rpEvalXQPos(board, playerIsRed){
+  var myScore=0, oppScore=0;
+  for(var r=0;r<10;r++)for(var c=0;c<9;c++){
+    var piece=board[r][c];
+    if(piece===0)continue;
+    var val=XV[piece]||0;
+    if(xqRedP(piece)===playerIsRed)myScore+=val;
+    else oppScore+=val;
+  }
+  return myScore-oppScore;
+}
 var rpSuggestTimer=null;
 function rpDrawSuggestion(x, y, isOpp, sugg, actualMove){
   if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
@@ -3671,7 +4464,7 @@ document.body.insertAdjacentHTML('beforeend',
 '<div class="rp-vbox"><div class="rp-vtitle" id="rpvtitle"></div><div class="rp-vinfo" id="rpvinfo"></div>'+
 '<canvas id="rpbd" style="border-radius:var(--rl);box-shadow:0 2px 8px rgba(60,40,10,.15)"></canvas>'+
 '<div id="rpvcomment" class="rp-vcomment"></div>'+
-'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><select id="rpspeed" onchange="rpSetSpeed(this.value)" style="padding:5px 8px;font-size:.75rem;border:1px solid var(--paper-d);border-radius:var(--r);background:var(--paper-w);color:var(--ink-s);font-family:var(--serif)"><option value="3000">0.5x 慢速</option><option value="2000">0.75x</option><option value="1500" selected>1x 正常</option><option value="1000">1.5x</option><option value="600">2x 快速</option><option value="300">4x 极速</option></select><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
+'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><select id="rpspeed" onchange="rpSetSpeed(this.value)" style="padding:5px 8px;font-size:.75rem;border:1px solid var(--paper-d);border-radius:var(--r);background:var(--paper-w);color:var(--ink-s);font-family:var(--serif)"><option value="3000">0.5x 慢速</option><option value="2000">0.75x</option><option value="1500" selected>1x 正常</option><option value="1000">1.5x</option><option value="600">2x 快速</option><option value="300">4x 极速</option></select><button id="rpcomebackbtn" onclick="rpToggleComeback()" style="background:var(--accent);color:#fff">🔍 转败为胜</button><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
 '<button class="rp-close" style="width:auto" onclick="closeRPViewer()">退出回放</button></div></div>');
 
 // ============================================================
