@@ -458,13 +458,33 @@ function rpStartAuto(){
   }
   replayTimer=setTimeout(nextStep,rpSpeed);
 }
+function rpStartComebackAuto(){
+  var btn=$('rpplaybtn');
+  if(btn)btn.textContent='⏸ 暂停';
+  function nextStep(){
+    if(!rpComebackMode||!rpComebackData){rpStopAuto();return}
+    if(rpComebackStep>=rpComebackData.altMoves.length){rpStopAuto();return}
+    rpComebackStep_(1);
+    if(rpComebackStep<rpComebackData.altMoves.length){
+      replayTimer=setTimeout(nextStep,rpSpeed);
+    }else{
+      rpStopAuto();
+    }
+  }
+  replayTimer=setTimeout(nextStep,rpSpeed);
+}
 function rpStep(dir){
   if(!replayData)return;
   if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
   // 转败为胜模式: 使用专用步进
   if(rpComebackMode){
-    if(dir===0){rpStopAuto();return}
-    if(rpTimer){clearTimeout(rpTimer);rpTimer=null}
+    if(dir===0){
+      // 自动播放: 切换播放/暂停
+      if(replayTimer){rpStopAuto();return}
+      rpStartComebackAuto();
+      return;
+    }
+    if(replayTimer){rpStopAuto()}
     rpComebackStep_(dir);
     return;
   }
@@ -1501,7 +1521,7 @@ function rpGomokuComment(m, idx, phase, total){
     }
   }
 
-  // 人类着法建议: 全面评估局面，防守优先
+  // 人类着法建议: 全面评估局面，防守优先，绝杀检测
   if(rpIsHumanMove(idx) && !pc.FIVE){
     var bestSuggest=rpFindBetterGomokuMove(x, y, p, opp, idx);
     if(bestSuggest) suggest=bestSuggest;
@@ -1538,30 +1558,43 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
 
   // 情况B: 玩家有直接获胜手段(连五)但没走 -> 建议获胜
   if(myWinMove && myWinMove.score>=10000){
-    return {text:'AI建议下('+myWinMove.x+','+myWinMove.y+')。理由：此处可直接连五获胜！这是唯一的致胜点，你实际落子错失了直接取胜的机会', x:myWinMove.x, y:myWinMove.y, isOpp:false};
+    return {text:'AI建议下('+myWinMove.x+','+myWinMove.y+')。理由：此处可直接连五获胜！这是唯一的致胜点，你实际落子错失了直接取胜的机会', x:myWinMove.x, y:myWinMove.y, isOpp:false, verified:true};
   }
 
   // 情况C: 玩家有活四手段但没走 -> 建议活四
   if(myWinMove && myWinMove.score>=1000 && actualOffScore<1000){
-    return {text:'AI建议下('+myWinMove.x+','+myWinMove.y+')。理由：此处可形成活四，对手无法阻止连五，等同获胜。你实际下法仅'+rpPCDesc(actualPC)+'，错失致胜良机', x:myWinMove.x, y:myWinMove.y, isOpp:false};
+    return {text:'AI建议下('+myWinMove.x+','+myWinMove.y+')。理由：此处可形成活四，对手无法阻止连五，等同获胜。你实际下法仅'+rpPCDesc(actualPC)+'，错失致胜良机', x:myWinMove.x, y:myWinMove.y, isOpp:false, verified:true};
   }
 
   // 情况D: 对方有严重威胁(活四/双冲四/双活三) -> 必须防守
   if(oppThreats.severe){
     // 检查玩家实际落子是否防住了对方的严重威胁
-    // 恢复后(已恢复)检查对方威胁是否被化解
     var oppThreatsAfter=rpScanGomokuThreats(opp, p);
-    if(!oppThreatsAfter.severe){
+    if(!oppThreatsAfter.severe && !oppThreatsAfter.moderate){
       // 玩家成功防守了严重威胁，正确！不给建议
       return null;
     }
-    // 玩家没有防住严重威胁，建议正确防守位置
-    // 撤销落子搜索最佳防守点
+    // 玩家没防住严重威胁
+    // 关键: 检查是否存在能防住的点(如果怎么防都防不住=绝杀，不给建议)
     gB[curY][curX]=0;
     var bestDef=rpFindBestGomokuDefense(opp, p);
-    gB[curY][curX]=p;
+    // 验证: 即使在最佳防守点落子，对方是否仍有严重威胁
+    var canDefend=false;
     if(bestDef){
-      return {text:'AI建议下('+bestDef.x+','+bestDef.y+')。理由：对方形成了'+oppThreats.desc+'，必须立即防守！你实际落子未能化解对方威胁，不防守将直接败北。此处是最佳防守点', x:bestDef.x, y:bestDef.y, isOpp:false};
+      gB[bestDef.y][bestDef.x]=p;
+      var threatsAfterDef=rpScanGomokuThreats(opp, p);
+      gB[bestDef.y][bestDef.x]=0;
+      if(!threatsAfterDef.severe)canDefend=true;
+    }
+    gB[curY][curX]=p;
+    if(!canDefend){
+      // 绝杀! 怎么防都防不住，不给当前步建议
+      // 检查上一步是否有避免绝杀的走法
+      return rpCheckPreventableLoss(curX, curY, p, opp, idx, oppThreats.desc);
+    }
+    // 可以防住，建议正确防守位置
+    if(bestDef){
+      return {text:'AI建议下('+bestDef.x+','+bestDef.y+')。理由：对方形成了'+oppThreats.desc+'，必须立即防守！你实际落子未能化解对方威胁，不防守将直接败北。此处是最佳防守点', x:bestDef.x, y:bestDef.y, isOpp:false, verified:true};
     }
     return null;
   }
@@ -1569,28 +1602,39 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
   // 情况E: 对方有一般威胁(活三) -> 通常需要防守
   if(oppThreats.moderate){
     var oppThreatsAfter2=rpScanGomokuThreats(opp, p);
-    if(!oppThreatsAfter2.moderate){
+    if(!oppThreatsAfter2.moderate && !oppThreatsAfter2.severe){
       // 玩家防住了活三，正确！
       return null;
     }
     // 玩家没防住活三
-    // 除非玩家能形成更强的威胁(双活三/冲四)让对方被迫防守
+    // 除非玩家能形成更强的威胁(冲四/双活三)让对方被迫防守
     if(actualOffScore>=200){
       // 玩家形成了冲四或双活三，以攻代守，可以接受
       return null;
     }
-    // 建议防守
+    // 检查防守是否能真正化解威胁
     gB[curY][curX]=0;
     var bestDef2=rpFindBestGomokuDefense(opp, p);
-    gB[curY][curX]=p;
+    var canDefend2=false;
     if(bestDef2){
-      return {text:'AI建议下('+bestDef2.x+','+bestDef2.y+')。理由：对方有'+oppThreats.desc+'，若不防守下一手对方将形成更大威胁。你实际落子未堵住对方攻势，应优先防守。此处是最佳防守点', x:bestDef2.x, y:bestDef2.y, isOpp:false};
+      gB[bestDef2.y][bestDef2.x]=p;
+      var threatsAfterDef2=rpScanGomokuThreats(opp, p);
+      gB[bestDef2.y][bestDef2.x]=0;
+      if(!threatsAfterDef2.severe && !threatsAfterDef2.moderate)canDefend2=true;
+    }
+    gB[curY][curX]=p;
+    if(!canDefend2){
+      // 防也防不住(对方有后续连续威胁)，不给建议，检查上一步
+      return rpCheckPreventableLoss(curX, curY, p, opp, idx, oppThreats.desc);
+    }
+    if(bestDef2){
+      return {text:'AI建议下('+bestDef2.x+','+bestDef2.y+')。理由：对方有'+oppThreats.desc+'，若不防守下一手对方将形成更大威胁。你实际落子未堵住对方攻势，应优先防守。此处是最佳防守点', x:bestDef2.x, y:bestDef2.y, isOpp:false, verified:true};
     }
     return null;
   }
 
   // 情况F: 对方没有威胁 -> 纯进攻局面，检查是否有更好的进攻点
-  if(actualPC.LIVE_FOUR>0 || actualPC.RUSH_FOUR>0)return null; // 进攻已足够强
+  if(actualPC.LIVE_FOUR>0 || actualPC.RUSH_FOUR>0)return null;
   gB[curY][curX]=0;
   var bestAtk=null, bestAtkScore=0;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
@@ -1604,14 +1648,63 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
   gB[curY][curX]=p;
   if(!bestAtk || bestAtkScore < actualOffScore+100)return null;
   if(bestAtkScore>=1000){
-    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处可形成活四，是最强进攻手。你实际下法仅'+rpPCDesc(actualPC)+'，错失了扩大优势的机会', x:bestAtk.x, y:bestAtk.y, isOpp:false};
+    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处可形成活四，是最强进攻手。你实际下法仅'+rpPCDesc(actualPC)+'，错失了扩大优势的机会', x:bestAtk.x, y:bestAtk.y, isOpp:false, verified:true};
   }
   if(bestAtkScore>=200 && bestAtk.pc.LIVE_THREE>=2 && actualOffScore<200){
-    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处可形成双活三，攻势更盛。你实际下法仅'+rpPCDesc(actualPC)+'，攻击力不足', x:bestAtk.x, y:bestAtk.y, isOpp:false};
+    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处可形成双活三，攻势更盛。你实际下法仅'+rpPCDesc(actualPC)+'，攻击力不足', x:bestAtk.x, y:bestAtk.y, isOpp:false, verified:true};
   }
   if(bestAtkScore>=100 && bestAtk.pc.LIVE_THREE>=1 && actualOffScore<100){
-    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处能形成活三，抢占先手。你实际落子仅'+rpPCDesc(actualPC)+'，未能给对手制造足够压力', x:bestAtk.x, y:bestAtk.y, isOpp:false};
+    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处能形成活三，抢占先手。你实际落子仅'+rpPCDesc(actualPC)+'，未能给对手制造足够压力', x:bestAtk.x, y:bestAtk.y, isOpp:false, verified:true};
   }
+  return null;
+}
+// 检查上一步是否有避免绝杀的走法(预防性建议)
+// 如果当前局面已被绝杀(怎么防都防不住)，检查玩家上一步是否有替代走法能避免
+function rpCheckPreventableLoss(curX, curY, p, opp, idx, threatDesc){
+  // 需要至少有2步以上的历史才能回溯
+  if(idx<2)return null;
+  // 找到上一步玩家的走法
+  var prevIdx=idx-2; // 对方走法在idx-1，玩家上一步在idx-2
+  if(prevIdx<0||!rpIsHumanMove(prevIdx))return null;
+  var prevMove=replayData.moves[prevIdx];
+  if(!prevMove)return null;
+  // 重建到上一步玩家落子前的棋盘
+  var savedGB=gB;
+  var tempB=[];
+  for(var i=0;i<GS;i++)tempB.push(new Array(GS).fill(0));
+  for(var i2=0;i2<prevIdx;i2++){
+    var m=replayData.moves[i2];
+    tempB[m.y][m.x]=m.p;
+  }
+  gB=tempB;
+  // 搜索: 玩家上一步如果换个位置下，对方下一步(实际走法)后是否还会被绝杀
+  var prevX=prevMove.x, prevY=prevMove.y;
+  var actualOppMove=replayData.moves[idx-1]; // 对方实际的走法
+  var bestAvoid=null;
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==0)continue;
+    if(x===prevX&&y===prevY)continue;
+    // 试放替代走法
+    gB[y][x]=p;
+    // 模拟对方实际走法
+    if(actualOppMove && gB[actualOppMove.y][actualOppMove.x]===0){
+      gB[actualOppMove.y][actualOppMove.x]=opp;
+      // 检查对方走法后是否仍有严重威胁
+      var threats=rpScanGomokuThreats(opp, p);
+      gB[actualOppMove.y][actualOppMove.x]=0;
+      if(!threats.severe){
+        // 这个替代走法避免了绝杀!
+        bestAvoid={x:x,y:y};
+      }
+    }
+    gB[y][x]=0;
+    if(bestAvoid)break;
+  }
+  gB=savedGB;
+  if(bestAvoid){
+    return {text:'AI建议：此局面已被对方'+threatDesc+'绝杀，无论怎么防守都无法挽回。问题出在更早的第'+(prevIdx+1)+'手——如果当时下('+bestAvoid.x+','+bestAvoid.y+')，就能阻止对方形成'+threatDesc+'。回看第'+(prevIdx+1)+'手时会有详细建议', verified:true};
+  }
+  // 绝杀无法避免，不给建议
   return null;
 }
 // 扫描五子棋对方威胁等级(在当前棋盘上)
@@ -1719,8 +1812,34 @@ function rpGoComment(m, idx, goCaptured, phase, total){
     var opp2=m.c===1?2:1;
     var bestGoSuggest=rpFindBetterGoMove(x,y,m.c,opp2,phase);
     if(bestGoSuggest){
-      suggest=bestGoSuggest;
-    }else{
+      // 围棋绝杀检测: 如果己方有1气棋串且无法救活，不给建议
+      var myDanger=rpScanGoDanger(m.c);
+      if(myDanger && myDanger.libs===1){
+        // 检查是否能救活
+        var canSave=false;
+        var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+        for(var d=0;d<4;d++){
+          var sx=myDanger.x+dirs[d][0], sy=myDanger.y+dirs[d][1];
+          if(sx>=0&&sx<GSZ&&sy>=0&&sy<GSZ&&goB[sx][sy]===0){
+            var testR=goTry(goB,sx,sy,m.c,goKo);
+            if(testR.valid){
+              var testB=testR.newBoard;
+              var afterInfo=rpGoGroupInfoOnBoard(testB,myDanger.x,myDanger.y,m.c);
+              if(afterInfo.libs>=3){canSave=true;break}
+            }
+          }
+        }
+        if(!canSave){
+          // 绝杀: 棋串将被提，无法挽救，不给当前步建议
+          suggest=null;
+        }else{
+          suggest=bestGoSuggest;
+        }
+      }else{
+        suggest=bestGoSuggest;
+      }
+    }
+    if(!suggest){
       // 如果这步远离主战场，给出建议
       var nearAny=false;
       for(var dx2=-4;dx2<=4&&!nearAny;dx2++)for(var dy2=-4;dy2<=4;dy2++){
@@ -1728,7 +1847,7 @@ function rpGoComment(m, idx, goCaptured, phase, total){
         if(nx2>=0&&nx2<GSZ&&ny2>=0&&ny2<GSZ&&goB[nx2][ny2]!==0){nearAny=true;break}
       }
       if(!nearAny && phase!=='开局'){
-        suggest={text:'AI建议：此手远离主战场，周围无棋子配合，效率较低。应优先在棋形密集处落子，与己方棋子形成呼应，或攻击对方弱棋，才能发挥每手棋的最大价值'};
+        suggest={text:'AI建议：此手远离主战场，周围无棋子配合，效率较低。应优先在棋形密集处落子，与己方棋子形成呼应，或攻击对方弱棋，才能发挥每手棋的最大价值', verified:true};
       }
     }
   }
@@ -2004,17 +2123,90 @@ function rpXQComment(m, idx, phase, total){
     }
   }
 
-  // 人类着法建议: 全面评估局面，防守优先
+  // 人类着法建议: 全面评估局面，防守优先，绝杀检测
   if(rpIsHumanMove(idx) && !(m.captured && m.captured!==0)){
     var moverRed2=xqRedP(m.piece);
     var playerIsRed2=replayData.playerFirst;
-    var bestCapture=rpFindBetterXQMove(playerIsRed2, m);
-    if(bestCapture){
-      suggest=bestCapture;
-    }else if(phase==='中盘' && !(m.captured && m.captured!==0)){
-      var pieceVal=XV[m.piece]||0;
-      if(pieceVal>=400 && Math.abs(m.tr-m.fr)<=1 && Math.abs(m.tc-m.fc)<=1){
-        suggest={text:'AI建议：大子仅微调一步，未能发挥进攻潜力。中盘阶段应主动出击，用车马炮配合攻击对方薄弱环节，或抢占要道控制局势，而非消极调整'};
+    // 象棋绝杀检测: 如果玩家被将军且无解，不给建议
+    var inCheckNow=xqCheck(xqB, playerIsRed2);
+    if(inCheckNow){
+      // 检查是否有合法走法能解将
+      var allEscape=xqLegalMoves(xqB, playerIsRed2);
+      var canEscape=false;
+      for(var ei=0;ei<allEscape.length;ei++){
+        var em=allEscape[ei];
+        var ep=xqB[em.fr][em.fc];
+        var ec=xqB[em.tr][em.tc];
+        xqB[em.tr][em.tc]=ep;xqB[em.fr][em.fc]=0;
+        if(!xqCheck(xqB, playerIsRed2))canEscape=true;
+        xqB[em.fr][em.fc]=ep;xqB[em.tr][em.tc]=ec;
+        if(canEscape)break;
+      }
+      if(!canEscape){
+        // 将死! 不给建议
+        suggest=null;
+      }else{
+        var bestCapture=rpFindBetterXQMove(playerIsRed2, m);
+        if(bestCapture) suggest=bestCapture;
+      }
+    }else{
+      // 检查对方是否威胁多个大子(无法全部保护)
+      var threatCount=0;
+      var allOppMoves=xqLegalMoves(xqB, !playerIsRed2);
+      var threatenedPieces={};
+      for(var ti=0;ti<allOppMoves.length;ti++){
+        var tm=allOppMoves[ti];
+        if(tm.captured&&tm.captured!==0){
+          var tval=XV[tm.captured]||0;
+          if(tval>=400 && !threatenedPieces[tm.tr+','+tm.tc]){
+            threatenedPieces[tm.tr+','+tm.tc]=1;
+            threatCount++;
+          }
+        }
+      }
+      if(threatCount>=2){
+        // 多子受威胁，检查能否同时保护
+        var canProtectAll=false;
+        var myMoves=xqLegalMoves(xqB, playerIsRed2);
+        for(var mi=0;mi<myMoves.length;mi++){
+          var mm=myMoves[mi];
+          var mp=xqB[mm.fr][mm.fc];
+          var mc=xqB[mm.tr][mm.tc];
+          xqB[mm.tr][mm.tc]=mp;xqB[mm.fr][mm.fc]=0;
+          // 检查走棋后还有多少大子被威胁
+          var remainingThreats=0;
+          var oppReplies=xqLegalMoves(xqB, !playerIsRed2);
+          var tp2={};
+          for(var ri=0;ri<oppReplies.length;ri++){
+            var rm=oppReplies[ri];
+            if(rm.captured&&rm.captured!==0){
+              var rval=XV[rm.captured]||0;
+              if(rval>=400 && !tp2[rm.tr+','+rm.tc]){
+                tp2[rm.tr+','+rm.tc]=1;
+                remainingThreats++;
+              }
+            }
+          }
+          xqB[mm.fr][mm.fc]=mp;xqB[mm.tr][mm.tc]=mc;
+          if(remainingThreats===0){canProtectAll=true;break}
+        }
+        if(!canProtectAll){
+          // 绝杀: 多子受威胁无法全保，不给建议
+          suggest=null;
+        }else{
+          var bestCapture2=rpFindBetterXQMove(playerIsRed2, m);
+          if(bestCapture2) suggest=bestCapture2;
+        }
+      }else{
+        var bestCapture3=rpFindBetterXQMove(playerIsRed2, m);
+        if(bestCapture3){
+          suggest=bestCapture3;
+        }else if(phase==='中盘'){
+          var pieceVal=XV[m.piece]||0;
+          if(pieceVal>=400 && Math.abs(m.tr-m.fr)<=1 && Math.abs(m.tc-m.fc)<=1){
+            suggest={text:'AI建议：大子仅微调一步，未能发挥进攻潜力。中盘阶段应主动出击，用车马炮配合攻击对方薄弱环节，或抢占要道控制局势，而非消极调整', verified:true};
+          }
+        }
       }
     }
   }
@@ -4464,7 +4656,7 @@ document.body.insertAdjacentHTML('beforeend',
 '<div class="rp-vbox"><div class="rp-vtitle" id="rpvtitle"></div><div class="rp-vinfo" id="rpvinfo"></div>'+
 '<canvas id="rpbd" style="border-radius:var(--rl);box-shadow:0 2px 8px rgba(60,40,10,.15)"></canvas>'+
 '<div id="rpvcomment" class="rp-vcomment"></div>'+
-'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><select id="rpspeed" onchange="rpSetSpeed(this.value)" style="padding:5px 8px;font-size:.75rem;border:1px solid var(--paper-d);border-radius:var(--r);background:var(--paper-w);color:var(--ink-s);font-family:var(--serif)"><option value="3000">0.5x 慢速</option><option value="2000">0.75x</option><option value="1500" selected>1x 正常</option><option value="1000">1.5x</option><option value="600">2x 快速</option><option value="300">4x 极速</option></select><button id="rpcomebackbtn" onclick="rpToggleComeback()" style="background:var(--accent);color:#fff">🔍 转败为胜</button><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
+'<div class="rp-vctl"><button onclick="rpStep(-1)">◀ 上一步</button><div class="rp-vstep" id="rpvstep">0/0</div><button onclick="rpStep(1)">下一步 ▶</button><button onclick="rpStep(0)" id="rpplaybtn">▶ 自动</button><select id="rpspeed" onchange="rpSetSpeed(this.value)" style="padding:5px 8px;font-size:.75rem;border:1px solid var(--paper-d);border-radius:var(--r);background:var(--paper-w);color:var(--ink-s);font-family:var(--serif)"><option value="3000">0.5x 慢速</option><option value="2000">0.75x</option><option value="1500" selected>1x 正常</option><option value="1000">1.5x</option><option value="600">2x 快速</option><option value="300">4x 极速</option></select><button id="rpcomebackbtn" onclick="rpToggleComeback()" style="background:var(--accent);color:#fff;font-size:.78rem">转败为胜</button><button onclick="downloadReplayHTML()" style="background:var(--accent2);color:#1c1917">下载HTML</button></div>'+
 '<button class="rp-close" style="width:auto" onclick="closeRPViewer()">退出回放</button></div></div>');
 
 // ============================================================
