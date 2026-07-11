@@ -612,20 +612,30 @@ function rpVerifyGomokuSugg(sugg, actualMove){
 }
 // 五子棋: 找对手最佳反击点(简化搜索)
 function rpGomokuBestReply(opp, my){
-  var best=null, bestScore=0;
+  var best=null, bestScore=-1;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
     if(gB[y][x]!==0)continue;
     gB[y][x]=opp;
     var pc=gPatCount(gB, x, y, opp);
     gB[y][x]=0;
     var score=pc.LIVE_FOUR*1000+pc.RUSH_FOUR*200+pc.LIVE_THREE*100+pc.SLEEP_THREE*30+pc.LIVE_TWO*10;
-    // 也考虑防守分
     gB[y][x]=my;
     var dpc=gPatCount(gB, x, y, my);
     gB[y][x]=0;
     var defScore=dpc.LIVE_FOUR*1000+dpc.RUSH_FOUR*200+dpc.LIVE_THREE*100;
     var total=Math.max(score, defScore*0.9);
+    var nearAny=false;
+    for(var dx=-2;dx<=2&&!nearAny;dx++)for(var dy=-2;dy<=2;dy++){
+      var nx=x+dx,ny=y+dy;
+      if(nx>=0&&nx<GS&&ny>=0&&ny<GS&&gB[ny][nx]!==0){nearAny=true;break}
+    }
+    if(nearAny)total+=1;
     if(total>bestScore){bestScore=total;best={x:x,y:y}}
+  }
+  if(!best){
+    for(var y2=0;y2<GS;y2++)for(var x2=0;x2<GS;x2++){
+      if(gB[y2][x2]===0)return {x:x2,y:y2};
+    }
   }
   return best;
 }
@@ -947,7 +957,7 @@ function rpGomokuComeback(){
     // 第step=0时，该玩家走(替代转折点这一步)
     var isPlayerStep=(step%2===0);
     var curColor=isPlayerStep?p:opp;
-    var bestM=rpGomokuBestForComeback(curColor, isPlayerStep?p:opp);
+    var bestM=rpGomokuBestForComeback(curColor, curColor===p?opp:p);
     if(!bestM)break;
     gB[bestM.y][bestM.x]=curColor;
     // 检查是否连五
@@ -1006,7 +1016,7 @@ function rpGomokuComebackReason(m, pc, isPlayer){
 }
 // 五子棋: 为转败为胜生成最佳走法(攻防一体)
 function rpGomokuBestForComeback(p, opp){
-  var best=null, bestScore=0;
+  var best=null, bestScore=-1;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
     if(gB[y][x]!==0)continue;
     // 进攻分
@@ -1026,7 +1036,20 @@ function rpGomokuBestForComeback(p, opp){
     }else{
       total=Math.max(offScore, defScore*0.85);
     }
+    // 位置加分: 靠近已有棋子的位置更好
+    var nearAny=false;
+    for(var dx=-2;dx<=2&&!nearAny;dx++)for(var dy=-2;dy<=2;dy++){
+      var nx=x+dx,ny=y+dy;
+      if(nx>=0&&nx<GS&&ny>=0&&ny<GS&&gB[ny][nx]!==0){nearAny=true;break}
+    }
+    if(nearAny)total+=1;
     if(total>bestScore){bestScore=total;best={x:x,y:y}}
+  }
+  // 兜底: 如果棋盘上有空位但没找到最佳(全0分)，返回中心附近的空位
+  if(!best || bestScore<0){
+    for(var y2=0;y2<GS;y2++)for(var x2=0;x2<GS;x2++){
+      if(gB[y2][x2]===0)return {x:x2,y:y2};
+    }
   }
   return best;
 }
@@ -1100,7 +1123,7 @@ function rpGoComeback(){
   for(var step=0;step<20;step++){
     var isPlayerStep=(step%2===0);
     var curColor=isPlayerStep?p:opp;
-    var bestM=rpGoBestForComeback(curColor, isPlayerStep?p:opp);
+    var bestM=rpGoBestForComeback(curColor, curColor===p?opp:p);
     if(!bestM)break;
     var r=goTry(goB,bestM.x,bestM.y,curColor,goKo);
     if(!r.valid)break;
@@ -1140,7 +1163,7 @@ function rpGoComebackReason(m, color){
 }
 function rpGoBestForComeback(myColor, oppColor){
   // 简化: 找能攻击对方弱棋或扩张己方的最佳点
-  var best=null, bestScore=0;
+  var best=null, bestScore=-1;
   for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
     if(goB[x][y]!==0)continue;
     var r=goTry(goB,x,y,myColor,goKo);
@@ -1163,6 +1186,8 @@ function rpGoBestForComeback(myColor, oppColor){
     }
     // 边角加分
     if(x<=2||x>=16||y<=2||y>=16)score+=3;
+    // 确保有基本分
+    score+=1;
     if(score>bestScore){bestScore=score;best={x:x,y:y}}
   }
   return best;
@@ -1322,9 +1347,15 @@ function rpXQBestForComeback(isRed){
     if(xqCheck(xqB, !isRed))score+=50;
     // 位置评估
     score+=(isRed?(mv.tr<5?2:0):(mv.tr>4?2:0));
+    // 确保有基本分(避免全0时返回null)
+    score+=1;
     xqB[mv.fr][mv.fc]=piece;
     xqB[mv.tr][mv.tc]=cap;
     if(score>bestScore){bestScore=score;best=mv}
+  }
+  // 兜底: 如果所有走法都送将(不应该发生)，返回第一个合法走法
+  if(!best && allMoves.length>0){
+    best=allMoves[0];
   }
   return best;
 }
@@ -1575,22 +1606,29 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
       return null;
     }
     // 玩家没防住严重威胁
-    // 关键: 检查是否存在能防住的点(如果怎么防都防不住=绝杀，不给建议)
     gB[curY][curX]=0;
     var bestDef=rpFindBestGomokuDefense(opp, p);
-    // 验证: 即使在最佳防守点落子，对方是否仍有严重威胁
+    // 验证: 即使在最佳防守点落子，对方是否仍能连五
     var canDefend=false;
     if(bestDef){
       gB[bestDef.y][bestDef.x]=p;
       var threatsAfterDef=rpScanGomokuThreats(opp, p);
+      // 检查对方是否有连五手段(堵了这端，对方另一端还能连五)
+      var oppCanWin=rpCanGomokuWinNext(opp);
       gB[bestDef.y][bestDef.x]=0;
-      if(!threatsAfterDef.severe)canDefend=true;
+      if(!threatsAfterDef.severe && !oppCanWin)canDefend=true;
     }
     gB[curY][curX]=p;
     if(!canDefend){
-      // 绝杀! 怎么防都防不住，不给当前步建议
-      // 检查上一步是否有避免绝杀的走法
-      return rpCheckPreventableLoss(curX, curY, p, opp, idx, oppThreats.desc);
+      // 绝杀: 怎么防都防不住
+      // 但仍然给出最佳防守位置(至少能拖延)，同时提示问题出在更早
+      var preventable=rpCheckPreventableLoss(curX, curY, p, opp, idx, oppThreats.desc);
+      if(preventable)return preventable;
+      // 如果无法追溯，仍然给出防守建议(哪怕只能拖延)
+      if(bestDef){
+        return {text:'AI建议下('+bestDef.x+','+bestDef.y+')。理由：对方'+oppThreats.desc+'已形成绝杀，此处是最佳防守点，虽无法完全化解但可拖延对方取胜节奏。实际局面已难以挽回', x:bestDef.x, y:bestDef.y, isOpp:false, verified:true};
+      }
+      return null;
     }
     // 可以防住，建议正确防守位置
     if(bestDef){
@@ -1612,21 +1650,10 @@ function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
       // 玩家形成了冲四或双活三，以攻代守，可以接受
       return null;
     }
-    // 检查防守是否能真正化解威胁
+    // 建议防守
     gB[curY][curX]=0;
     var bestDef2=rpFindBestGomokuDefense(opp, p);
-    var canDefend2=false;
-    if(bestDef2){
-      gB[bestDef2.y][bestDef2.x]=p;
-      var threatsAfterDef2=rpScanGomokuThreats(opp, p);
-      gB[bestDef2.y][bestDef2.x]=0;
-      if(!threatsAfterDef2.severe && !threatsAfterDef2.moderate)canDefend2=true;
-    }
     gB[curY][curX]=p;
-    if(!canDefend2){
-      // 防也防不住(对方有后续连续威胁)，不给建议，检查上一步
-      return rpCheckPreventableLoss(curX, curY, p, opp, idx, oppThreats.desc);
-    }
     if(bestDef2){
       return {text:'AI建议下('+bestDef2.x+','+bestDef2.y+')。理由：对方有'+oppThreats.desc+'，若不防守下一手对方将形成更大威胁。你实际落子未堵住对方攻势，应优先防守。此处是最佳防守点', x:bestDef2.x, y:bestDef2.y, isOpp:false, verified:true};
     }
@@ -1707,6 +1734,17 @@ function rpCheckPreventableLoss(curX, curY, p, opp, idx, threatDesc){
   // 绝杀无法避免，不给建议
   return null;
 }
+// 检查指定方是否有连五手段(下一步即可获胜)
+function rpCanGomokuWinNext(color){
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==0)continue;
+    gB[y][x]=color;
+    var pc=gPatCount(gB, x, y, color);
+    gB[y][x]=0;
+    if(pc.FIVE>0)return true;
+  }
+  return false;
+}
 // 扫描五子棋对方威胁等级(在当前棋盘上)
 function rpScanGomokuThreats(opp, my){
   var severe=false, moderate=false, desc='';
@@ -1738,18 +1776,30 @@ function rpScanGomokuWinMove(p){
 }
 // 寻找五子棋最佳防守点(堵对方最强威胁)
 function rpFindBestGomokuDefense(opp, my){
-  var best=null, bestReduce=0;
-  // 对方威胁最大的点
+  var best=null, bestReduce=-1;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
     if(gB[y][x]!==0)continue;
-    // 试放己方棋子，检查能否最大程度削弱对方威胁
+    // 试放己方棋子，检查对方威胁是否减少
     gB[y][x]=my;
     var threats=rpScanGomokuThreats(opp, my);
     gB[y][x]=0;
     var reduce=0;
     if(!threats.severe && !threats.moderate)reduce=100;
     else if(!threats.severe)reduce=50;
+    // 位置加分: 靠近对方棋子的防守更有价值
+    var nearOpp=false;
+    for(var dx=-2;dx<=2&&!nearOpp;dx++)for(var dy=-2;dy<=2;dy++){
+      var nx=x+dx,ny=y+dy;
+      if(nx>=0&&nx<GS&&ny>=0&&ny<GS&&gB[ny][nx]===opp){nearOpp=true;break}
+    }
+    if(nearOpp)reduce+=1;
     if(reduce>bestReduce){bestReduce=reduce;best={x:x,y:y}}
+  }
+  // 兜底: 返回任意空位
+  if(!best){
+    for(var y2=0;y2<GS;y2++)for(var x2=0;x2<GS;x2++){
+      if(gB[y2][x2]===0)return {x:x2,y:y2};
+    }
   }
   return best;
 }
