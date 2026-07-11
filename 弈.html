@@ -708,55 +708,164 @@ function rpGomokuComment(m, idx, phase, total){
     }
   }
 
-  // 人类着法建议: 检查是否存在更好的进攻点
-  if(rpIsHumanMove(idx) && !pc.FIVE && !pc.LIVE_FOUR){
+  // 人类着法建议: 全面评估局面，防守优先
+  if(rpIsHumanMove(idx) && !pc.FIVE){
     var bestSuggest=rpFindBetterGomokuMove(x, y, p, opp, idx);
     if(bestSuggest) suggest=bestSuggest;
   }
 
   return {cmt: cmt, suggest: suggest};
 }
-// 寻找五子棋更好的着法(只对玩家方)
-// 关键: 必须先撤销玩家实际落子，在落子前的棋盘上搜索替代位置，否则相当于玩家多下了一步
+// 五子棋AI建议: 全面评估局面，防守优先原则
+// 核心逻辑:
+//   1. 撤销玩家落子，检查对方在落子前是否有必须防守的威胁
+//   2. 如果对方有威胁(活三/活四/双活三等):
+//      a. 如果玩家实际落子成功防住了威胁 -> 正确防守，不给进攻建议
+//      b. 如果玩家没防住 -> 建议正确防守位置
+//      c. 除非玩家能直接连五/活四获胜(进攻就是最好的防守)
+//   3. 如果对方没有威胁 -> 检查是否有更好的进攻点
 function rpFindBetterGomokuMove(curX, curY, p, opp, idx){
-  // 1. 计算玩家实际落子形成的棋型(作为对比基准)
+  // 计算玩家实际落子形成的棋型
   var actualPC=gPatCount(gB, curX, curY, p);
-  var actualScore=actualPC.LIVE_FOUR*1000 + actualPC.RUSH_FOUR*200 + actualPC.LIVE_THREE*100 + actualPC.SLEEP_THREE*30 + actualPC.LIVE_TWO*10;
+  var actualOffScore=actualPC.LIVE_FOUR*1000 + actualPC.RUSH_FOUR*200 + actualPC.LIVE_THREE*100 + actualPC.SLEEP_THREE*30 + actualPC.LIVE_TWO*10;
 
-  // 2. 撤销玩家实际落子，在落子前的棋盘上搜索替代位置
+  // 撤销玩家落子，在落子前的棋盘上分析
   gB[curY][curX]=0;
 
-  var bestMove=null, bestScore=0;
+  // 1. 检查对方在玩家落子前是否有威胁(需要玩家防守的)
+  var oppThreats=rpScanGomokuThreats(opp, p);
+  // 2. 检查玩家是否有直接获胜手段(连五/活四)
+  var myWinMove=rpScanGomokuWinMove(p);
+
+  // 恢复玩家落子
+  gB[curY][curX]=p;
+
+  // 情况A: 玩家实际落子直接获胜 -> 不给建议
+  if(actualPC.FIVE>0 || actualPC.LIVE_FOUR>0)return null;
+
+  // 情况B: 玩家有直接获胜手段(连五)但没走 -> 建议获胜
+  if(myWinMove && myWinMove.score>=10000){
+    return {text:'AI建议下('+myWinMove.x+','+myWinMove.y+')。理由：此处可直接连五获胜！这是唯一的致胜点，你实际落子错失了直接取胜的机会', x:myWinMove.x, y:myWinMove.y, isOpp:false};
+  }
+
+  // 情况C: 玩家有活四手段但没走 -> 建议活四
+  if(myWinMove && myWinMove.score>=1000 && actualOffScore<1000){
+    return {text:'AI建议下('+myWinMove.x+','+myWinMove.y+')。理由：此处可形成活四，对手无法阻止连五，等同获胜。你实际下法仅'+rpPCDesc(actualPC)+'，错失致胜良机', x:myWinMove.x, y:myWinMove.y, isOpp:false};
+  }
+
+  // 情况D: 对方有严重威胁(活四/双冲四/双活三) -> 必须防守
+  if(oppThreats.severe){
+    // 检查玩家实际落子是否防住了对方的严重威胁
+    // 恢复后(已恢复)检查对方威胁是否被化解
+    var oppThreatsAfter=rpScanGomokuThreats(opp, p);
+    if(!oppThreatsAfter.severe){
+      // 玩家成功防守了严重威胁，正确！不给建议
+      return null;
+    }
+    // 玩家没有防住严重威胁，建议正确防守位置
+    // 撤销落子搜索最佳防守点
+    gB[curY][curX]=0;
+    var bestDef=rpFindBestGomokuDefense(opp, p);
+    gB[curY][curX]=p;
+    if(bestDef){
+      return {text:'AI建议下('+bestDef.x+','+bestDef.y+')。理由：对方形成了'+oppThreats.desc+'，必须立即防守！你实际落子未能化解对方威胁，不防守将直接败北。此处是最佳防守点', x:bestDef.x, y:bestDef.y, isOpp:false};
+    }
+    return null;
+  }
+
+  // 情况E: 对方有一般威胁(活三) -> 通常需要防守
+  if(oppThreats.moderate){
+    var oppThreatsAfter2=rpScanGomokuThreats(opp, p);
+    if(!oppThreatsAfter2.moderate){
+      // 玩家防住了活三，正确！
+      return null;
+    }
+    // 玩家没防住活三
+    // 除非玩家能形成更强的威胁(双活三/冲四)让对方被迫防守
+    if(actualOffScore>=200){
+      // 玩家形成了冲四或双活三，以攻代守，可以接受
+      return null;
+    }
+    // 建议防守
+    gB[curY][curX]=0;
+    var bestDef2=rpFindBestGomokuDefense(opp, p);
+    gB[curY][curX]=p;
+    if(bestDef2){
+      return {text:'AI建议下('+bestDef2.x+','+bestDef2.y+')。理由：对方有'+oppThreats.desc+'，若不防守下一手对方将形成更大威胁。你实际落子未堵住对方攻势，应优先防守。此处是最佳防守点', x:bestDef2.x, y:bestDef2.y, isOpp:false};
+    }
+    return null;
+  }
+
+  // 情况F: 对方没有威胁 -> 纯进攻局面，检查是否有更好的进攻点
+  if(actualPC.LIVE_FOUR>0 || actualPC.RUSH_FOUR>0)return null; // 进攻已足够强
+  gB[curY][curX]=0;
+  var bestAtk=null, bestAtkScore=0;
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==0)continue;
+    gB[y][x]=p;
+    var pc2=gPatCount(gB, x, y, p);
+    gB[y][x]=0;
+    var s2=pc2.LIVE_FOUR*1000 + pc2.RUSH_FOUR*200 + pc2.LIVE_THREE*100 + pc2.SLEEP_THREE*30 + pc2.LIVE_TWO*10;
+    if(s2>bestAtkScore){bestAtkScore=s2;bestAtk={x:x,y:y,pc:pc2}}
+  }
+  gB[curY][curX]=p;
+  if(!bestAtk || bestAtkScore < actualOffScore+100)return null;
+  if(bestAtkScore>=1000){
+    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处可形成活四，是最强进攻手。你实际下法仅'+rpPCDesc(actualPC)+'，错失了扩大优势的机会', x:bestAtk.x, y:bestAtk.y, isOpp:false};
+  }
+  if(bestAtkScore>=200 && bestAtk.pc.LIVE_THREE>=2 && actualOffScore<200){
+    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处可形成双活三，攻势更盛。你实际下法仅'+rpPCDesc(actualPC)+'，攻击力不足', x:bestAtk.x, y:bestAtk.y, isOpp:false};
+  }
+  if(bestAtkScore>=100 && bestAtk.pc.LIVE_THREE>=1 && actualOffScore<100){
+    return {text:'AI建议下('+bestAtk.x+','+bestAtk.y+')。理由：当前局面对方无威胁，此处能形成活三，抢占先手。你实际落子仅'+rpPCDesc(actualPC)+'，未能给对手制造足够压力', x:bestAtk.x, y:bestAtk.y, isOpp:false};
+  }
+  return null;
+}
+// 扫描五子棋对方威胁等级(在当前棋盘上)
+function rpScanGomokuThreats(opp, my){
+  var severe=false, moderate=false, desc='';
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==opp)continue;
+    var pc=gPatCount(gB, x, y, opp);
+    if(pc.LIVE_FOUR>0){severe=true;desc='活四';return {severe:severe,moderate:moderate,desc:desc}}
+    if(pc.RUSH_FOUR>=2){severe=true;desc='双冲四';return {severe:severe,moderate:moderate,desc:desc}}
+    if(pc.LIVE_THREE>=2){severe=true;desc='双活三';return {severe:severe,moderate:moderate,desc:desc}}
+    if(pc.RUSH_FOUR>0 && pc.LIVE_THREE>0){severe=true;desc='冲四带活三';return {severe:severe,moderate:moderate,desc:desc}}
+    if(pc.LIVE_THREE>0){moderate=true;desc='活三'}
+  }
+  return {severe:severe,moderate:moderate,desc:desc};
+}
+// 扫描五子棋是否有直接获胜手段(连五/活四)
+function rpScanGomokuWinMove(p){
+  var best=null, bestScore=0;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
     if(gB[y][x]!==0)continue;
     gB[y][x]=p;
     var pc=gPatCount(gB, x, y, p);
     gB[y][x]=0;
-    var score=pc.LIVE_FOUR*1000 + pc.RUSH_FOUR*200 + pc.LIVE_THREE*100 + pc.SLEEP_THREE*30 + pc.LIVE_TWO*10;
-    if(score>bestScore){
-      bestScore=score;
-      bestMove={x:x, y:y, pc:pc};
-    }
+    var score=0;
+    if(pc.FIVE>0)score=10000;
+    else if(pc.LIVE_FOUR>0)score=1000;
+    if(score>bestScore){bestScore=score;best={x:x,y:y,score:score}}
   }
-
-  // 3. 恢复玩家实际落子
-  gB[curY][curX]=p;
-
-  // 4. 只有当替代位置明显优于实际落子时才给出建议
-  if(!bestMove)return null;
-  // 替代位置必须比实际落子强至少一个等级(score差距>=100，即至少多一个活三)
-  if(bestScore < actualScore+100)return null;
-
-  if(bestScore>=1000 && bestScore>actualScore){
-    return {text:'AI建议下('+bestMove.x+','+bestMove.y+')。理由：此处可直接形成活四，对手无论如何防守都无法阻止连五，是当前局面最强进攻手。你实际下的位置仅形成'+rpPCDesc(actualPC)+'，错失了致胜良机', x:bestMove.x, y:bestMove.y, isOpp:false};
+  return best;
+}
+// 寻找五子棋最佳防守点(堵对方最强威胁)
+function rpFindBestGomokuDefense(opp, my){
+  var best=null, bestReduce=0;
+  // 对方威胁最大的点
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]!==0)continue;
+    // 试放己方棋子，检查能否最大程度削弱对方威胁
+    gB[y][x]=my;
+    var threats=rpScanGomokuThreats(opp, my);
+    gB[y][x]=0;
+    var reduce=0;
+    if(!threats.severe && !threats.moderate)reduce=100;
+    else if(!threats.severe)reduce=50;
+    if(reduce>bestReduce){bestReduce=reduce;best={x:x,y:y}}
   }
-  if(bestScore>=200 && bestMove.pc.LIVE_THREE>=2 && actualScore<200){
-    return {text:'AI建议下('+bestMove.x+','+bestMove.y+')。理由：此处可形成双活三，两个方向同时构成威胁，对手只能防一边，下一手即可转为活四胜势。你实际下法仅'+rpPCDesc(actualPC)+'，攻击力不足', x:bestMove.x, y:bestMove.y, isOpp:false};
-  }
-  if(bestScore>=100 && bestMove.pc.LIVE_THREE>=1 && actualScore<100){
-    return {text:'AI建议下('+bestMove.x+','+bestMove.y+')。理由：此处能形成活三，对手必须立即防守，你可掌握先手继续扩大优势。你实际落子仅'+rpPCDesc(actualPC)+'，未能给对手制造足够压力', x:bestMove.x, y:bestMove.y, isOpp:false};
-  }
-  return null;
+  return best;
 }
 // 描述五子棋棋型(用于建议文案)
 function rpPCDesc(pc){
@@ -812,9 +921,8 @@ function rpGoComment(m, idx, goCaptured, phase, total){
     }
   }
 
-  // 人类着法建议
+  // 人类着法建议: 围棋建议需谨慎，优先检查是否在应对紧急局面
   if(rpIsHumanMove(idx) && capCount===0){
-    // 检查是否有更好的进攻点：找对方薄弱棋子附近
     var opp2=m.c===1?2:1;
     var bestGoSuggest=rpFindBetterGoMove(x,y,m.c,opp2,phase);
     if(bestGoSuggest){
@@ -834,16 +942,21 @@ function rpGoComment(m, idx, goCaptured, phase, total){
 
   return {cmt: cmt, suggest: suggest};
 }
-// 寻找围棋更好的着法
-// 关键: 必须先撤销玩家实际落子(及其提子)，在落子前的棋盘上搜索替代位置
+// 围棋AI建议: 优先检查紧急局面，不盲目建议进攻
+// 核心逻辑:
+//   1. 检查玩家落子前，己方是否有棋串处于危险中(<=2气)
+//   2. 如果己方有危险棋串:
+//      a. 玩家实际落子是否在救棋(增加气数) -> 正确，不给建议
+//      b. 玩家没救棋 -> 建议救棋位置
+//   3. 如果己方无危险，检查对方是否有弱棋可攻
+//   4. 如果都没有，检查围空效率
 function rpFindBetterGoMove(curX, curY, myColor, oppColor, phase){
-  // 1. 保存当前棋盘状态(包含玩家落子后的状态)
+  // 保存当前棋盘状态(包含玩家落子后的状态)
   var savedBoard=[];
   for(var i=0;i<GSZ;i++)savedBoard.push(goB[i].slice());
   var savedKo=goKo;
 
-  // 2. 撤销玩家落子: 重建到玩家落子前的棋盘
-  // 回退到这一步之前的状态
+  // 撤销玩家落子: 重建到玩家落子前的棋盘
   goB=[];
   for(var i2=0;i2<GSZ;i2++)goB.push(new Array(GSZ).fill(0));
   goKo=null;goLast=null;
@@ -853,80 +966,209 @@ function rpFindBetterGoMove(curX, curY, myColor, oppColor, phase){
     if(r3.valid){goB=r3.newBoard;goKo=r3.newKo;goLast={x:m3.x,y:m3.y,c:m3.c}}
   }
 
-  // 3. 在玩家落子前的棋盘上搜索替代位置
   var result=null;
 
-  // 找对方薄弱棋子(少于2气的棋串)附近可攻击点
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
-    if(goB[x][y]!==oppColor)continue;
-    var libs=0;
-    var visited={};
-    var stack=[[x,y]];
-    while(stack.length>0){
-      var pos=stack.pop();
-      var px=pos[0],py=pos[1];
-      var key=px+','+py;
-      if(visited[key])continue;
-      visited[key]=1;
-      var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
-      for(var d=0;d<4;d++){
-        var nx=px+dirs[d][0],ny=py+dirs[d][1];
-        if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
-        if(goB[nx][ny]===0)libs++;
-        else if(goB[nx][ny]===oppColor&&!visited[nx+','+ny])stack.push([nx,ny]);
-      }
-    }
-    if(libs<=2 && libs>0){
-      for(var key2 in visited){
-        var parts=key2.split(',');
-        var vx=parseInt(parts[0]),vy=parseInt(parts[1]);
-        var dirs2=[[0,1],[0,-1],[1,0],[-1,0]];
-        for(var d2=0;d2<4;d2++){
-          var tx=vx+dirs2[d2][0],ty=vy+dirs2[d2][1];
-          if(tx<0||tx>=GSZ||ty<0||ty>=GSZ)continue;
-          if(goB[tx][ty]===0){
-            // 验证这个位置是否合法
-            var testR=goTry(goB,tx,ty,myColor,goKo);
-            if(testR.valid){
-              result={text:'AI建议下('+tx+','+ty+')。理由：对方此处棋子仅剩'+libs+'口气，已是弱棋。在此紧气可逼迫对方逃孤或被提，掌握攻击主动权。你实际落子未对对方弱棋施压，错失攻击良机', x:tx, y:ty, isOpp:false};
-            }
-            break;
-          }
+  // 1. 检查己方是否有危险棋串(<=2气) - 需要紧急处理
+  var myDanger=rpScanGoDanger(myColor);
+  if(myDanger){
+    // 检查玩家实际落子是否在救棋(落子位置在危险棋串附近)
+    var nearDanger=false;
+    for(var dx=-1;dx<=1&&!nearDanger;dx++)for(var dy=-1;dy<=1;dy++){
+      var nx=curX+dx,ny=curY+dy;
+      if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ){
+        // 恢复棋盘检查玩家落子后该位置的状态
+        var testB=[];
+        for(var bi=0;bi<GSZ;bi++)testB.push(goB[bi].slice());
+        var testR=goTry(testB,curX,curY,myColor,goKo);
+        if(testR.valid){
+          testB=testR.newBoard;
+          // 检查落子后危险是否缓解
+          var myDangerAfter=rpScanGoDangerOnBoard(testB,myColor);
+          if(!myDangerAfter)nearDanger=true;
         }
-        if(result)break;
       }
     }
-    if(result)break;
+    if(!nearDanger){
+      // 玩家没救棋，建议救棋位置
+      var saveMove=rpFindGoSaveMove(myColor);
+      if(saveMove){
+        result={text:'AI建议下('+saveMove.x+','+saveMove.y+')。理由：己方有棋串仅剩'+myDanger.libs+'口气，随时可能被提。应优先救棋，增加气数或连接友军。你实际落子未处理己方危机，若被对方提子将损失惨重', x:saveMove.x, y:saveMove.y, isOpp:false};
+      }
+    }
+    // 如果玩家在救棋，正确，不给建议
   }
 
-  // 找己方可扩张的点
-  if(!result){
-    for(var x2=0;x2<GSZ;x2++)for(var y2=0;y2<GSZ;y2++){
-      if(goB[x2][y2]!==0)continue;
-      var nearMy=false;
-      for(var dx=-1;dx<=1&&!nearMy;dx++)for(var dy=-1;dy<=1;dy++){
-        var nx=x2+dx,ny=y2+dy;
-        if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ&&goB[nx][ny]===myColor)nearMy=true;
+  // 2. 检查对方是否有弱棋可攻(只在己方无危机时)
+  if(!result && !myDanger){
+    var oppWeak=rpScanGoWeak(oppColor);
+    if(oppWeak){
+      // 检查玩家实际落子是否已在攻击弱棋附近
+      var nearWeak=false;
+      for(var dx2=-1;dx2<=1&&!nearWeak;dx2++)for(var dy2=-1;dy2<=1;dy2++){
+        var nx2=curX+dx2,ny2=curY+dy2;
+        if(nx2>=0&&nx2<GSZ&&ny2>=0&&ny2<GSZ&&goB[nx2][ny2]===oppColor)nearWeak=true;
       }
-      if(nearMy){
-        var nearEdge=x2<=2||x2>=16||y2<=2||y2>=16;
-        if(nearEdge && phase!=='收官'){
-          var testR2=goTry(goB,x2,y2,myColor,goKo);
-          if(testR2.valid){
-            result={text:'AI建议下('+x2+','+y2+')。理由：此处靠近边角，配合己方棋子可围成实地，效率高且风险低。你实际落子位置围空效率较低，未能最大化地盘收益', x:x2, y:y2, isOpp:false};
-            break;
-          }
+      if(!nearWeak){
+        // 玩家没攻弱棋，建议攻击位置
+        var atkMove=rpFindGoAttackMove(oppColor,myColor);
+        if(atkMove){
+          result={text:'AI建议下('+atkMove.x+','+atkMove.y+')。理由：对方此处棋子仅剩'+oppWeak.libs+'口气，是弱棋。在此紧气可逼迫对方逃孤或被提，掌握攻击主动权。你实际落子未对对方弱棋施压，错失攻击良机', x:atkMove.x, y:atkMove.y, isOpp:false};
         }
       }
     }
   }
 
-  // 4. 恢复玩家落子后的棋盘状态
+  // 3. 如果没有紧急情况，检查围空效率(只在对方无弱棋且己方无危机时)
+  if(!result && !myDanger){
+    var oppWeak2=rpScanGoWeak(oppColor);
+    if(!oppWeak2){
+      // 检查玩家落子是否远离主战场
+      var nearAny=false;
+      for(var dx3=-3;dx3<=3&&!nearAny;dx3++)for(var dy3=-3;dy3<=3;dy3++){
+        var nx3=curX+dx3,ny3=curY+dy3;
+        if(nx3>=0&&nx3<GSZ&&ny3>=0&&ny3<GSZ&&goB[nx3][ny3]!==0){nearAny=true;break}
+      }
+      if(!nearAny && phase!=='开局'){
+        // 寻找更好的围空点
+        var bestExpand=rpFindGoExpandMove(myColor,phase);
+        if(bestExpand){
+          result={text:'AI建议下('+bestExpand.x+','+bestExpand.y+')。理由：此手远离主战场，周围无棋子配合，效率较低。此处靠近己方棋子可围成实地，配合既有势力扩大地盘', x:bestExpand.x, y:bestExpand.y, isOpp:false};
+        }
+      }
+    }
+  }
+
+  // 恢复玩家落子后的棋盘状态
   goB=savedBoard;
   goKo=savedKo;
   goLast={x:curX,y:curY,c:myColor};
 
   return result;
+}
+// 扫描围棋己方危险棋串(<=2气)
+function rpScanGoDanger(myColor){
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]!==myColor)continue;
+    var info=rpGoGroupInfo(x,y,myColor);
+    if(info.libs<=2 && info.libs>0){
+      return {x:x,y:y,libs:info.libs};
+    }
+  }
+  return null;
+}
+// 在指定棋盘上扫描危险
+function rpScanGoDangerOnBoard(board,myColor){
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(board[x][y]!==myColor)continue;
+    var visited={};
+    var stack=[[x,y]];
+    var libs=0;
+    while(stack.length>0){
+      var pos=stack.pop();
+      var key=pos[0]+','+pos[1];
+      if(visited[key])continue;
+      visited[key]=1;
+      var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+      for(var d=0;d<4;d++){
+        var nx=pos[0]+dirs[d][0],ny=pos[1]+dirs[d][1];
+        if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+        if(board[nx][ny]===0)libs++;
+        else if(board[nx][ny]===myColor&&!visited[nx+','+ny])stack.push([nx,ny]);
+      }
+    }
+    if(libs<=2 && libs>0)return {x:x,y:y,libs:libs};
+  }
+  return null;
+}
+// 获取围棋棋串信息(气数)
+function rpGoGroupInfo(x,y,color){
+  var visited={};
+  var stack=[[x,y]];
+  var libs=0;
+  while(stack.length>0){
+    var pos=stack.pop();
+    var key=pos[0]+','+pos[1];
+    if(visited[key])continue;
+    visited[key]=1;
+    var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+    for(var d=0;d<4;d++){
+      var nx=pos[0]+dirs[d][0],ny=pos[1]+dirs[d][1];
+      if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+      if(goB[nx][ny]===0)libs++;
+      else if(goB[nx][ny]===color&&!visited[nx+','+ny])stack.push([nx,ny]);
+    }
+  }
+  return {libs:libs};
+}
+// 扫描围棋对方弱棋(<=2气)
+function rpScanGoWeak(oppColor){
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]!==oppColor)continue;
+    var info=rpGoGroupInfo(x,y,oppColor);
+    if(info.libs<=2 && info.libs>0){
+      return {x:x,y:y,libs:info.libs};
+    }
+  }
+  return null;
+}
+// 寻找围棋救棋位置
+function rpFindGoSaveMove(myColor){
+  // 找己方危险棋串附近能增加气的空点
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]!==myColor)continue;
+    var info=rpGoGroupInfo(x,y,myColor);
+    if(info.libs<=2 && info.libs>0){
+      // 找这个棋串附近的空点
+      var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+      for(var d=0;d<4;d++){
+        var nx=x+dirs[d][0],ny=y+dirs[d][1];
+        if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+        if(goB[nx][ny]===0){
+          var testR=goTry(goB,nx,ny,myColor,goKo);
+          if(testR.valid)return {x:nx,y:ny};
+        }
+      }
+    }
+  }
+  return null;
+}
+// 寻找围棋攻击位置
+function rpFindGoAttackMove(oppColor,myColor){
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]!==oppColor)continue;
+    var info=rpGoGroupInfo(x,y,oppColor);
+    if(info.libs<=2 && info.libs>0){
+      var dirs=[[0,1],[0,-1],[1,0],[-1,0]];
+      for(var d=0;d<4;d++){
+        var nx=x+dirs[d][0],ny=y+dirs[d][1];
+        if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
+        if(goB[nx][ny]===0){
+          var testR=goTry(goB,nx,ny,myColor,goKo);
+          if(testR.valid)return {x:nx,y:ny};
+        }
+      }
+    }
+  }
+  return null;
+}
+// 寻找围棋围空位置
+function rpFindGoExpandMove(myColor,phase){
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]!==0)continue;
+    var nearMy=false;
+    for(var dx=-1;dx<=1&&!nearMy;dx++)for(var dy=-1;dy<=1;dy++){
+      var nx=x+dx,ny=y+dy;
+      if(nx>=0&&nx<GSZ&&ny>=0&&ny<GSZ&&goB[nx][ny]===myColor)nearMy=true;
+    }
+    if(nearMy){
+      var nearEdge=x<=2||x>=16||y<=2||y>=16;
+      if(nearEdge && phase!=='收官'){
+        var testR=goTry(goB,x,y,myColor,goKo);
+        if(testR.valid)return {x:x,y:y};
+      }
+    }
+  }
+  return null;
 }
 // 象棋讲解
 function rpXQComment(m, idx, phase, total){
@@ -969,11 +1211,10 @@ function rpXQComment(m, idx, phase, total){
     }
   }
 
-  // 人类着法建议: 检查是否存在能吃子的着法
+  // 人类着法建议: 全面评估局面，防守优先
   if(rpIsHumanMove(idx) && !(m.captured && m.captured!==0)){
     var moverRed2=xqRedP(m.piece);
     var playerIsRed2=replayData.playerFirst;
-    // 扫描所有己方棋子，找能吃对方大子的着法
     var bestCapture=rpFindBetterXQMove(playerIsRed2, m);
     if(bestCapture){
       suggest=bestCapture;
@@ -987,32 +1228,91 @@ function rpXQComment(m, idx, phase, total){
 
   return {cmt: cmt, suggest: suggest};
 }
-// 寻找象棋更好的着法(能吃大子的走法)
-// 关键: 必须先撤销玩家实际走棋，在走棋前的棋盘上搜索替代走法
+// 象棋AI建议: 全面评估局面，防守优先原则
+// 核心逻辑:
+//   1. 撤销玩家走棋，检查对方在走棋前是否将军或威胁大子
+//   2. 如果对方在将军 -> 必须应将，玩家走棋若已应将则正确，不给进攻建议
+//   3. 如果对方威胁己方大子(下一手可吃) -> 玩家走棋若在保护/逃跑则正确
+//   4. 如果无威胁 -> 检查是否有更好的吃子机会
 function rpFindBetterXQMove(playerIsRed, curMove){
-  // 1. 保存当前棋盘状态(包含玩家走棋后的状态)
+  // 保存当前棋盘状态(包含玩家走棋后的状态)
   var savedBoard=[];
   for(var i=0;i<xqB.length;i++)savedBoard.push(xqB[i].slice());
 
-  // 2. 撤销玩家走棋: 把棋子移回原位，恢复被吃的子
+  // 撤销玩家走棋: 把棋子移回原位，恢复被吃的子
   if(curMove){
     var movedPiece=xqB[curMove.tr][curMove.tc];
     xqB[curMove.fr][curMove.fc]=movedPiece;
     xqB[curMove.tr][curMove.tc]=(curMove.captured&&curMove.captured!==0)?curMove.captured:0;
   }
 
-  // 3. 在玩家走棋前的棋盘上搜索替代走法
+  var result=null;
+
+  // 1. 检查对方是否在将军(玩家走棋前的棋盘上)
+  var inCheck=xqCheck(xqB, playerIsRed);
+  if(inCheck){
+    // 对方在将军！玩家必须应将
+    // 检查玩家实际走棋是否化解了将军
+    // 恢复棋盘到走棋后状态检查
+    xqB=savedBoard.map(function(r){return r.slice()});
+    var stillInCheck=xqCheck(xqB, playerIsRed);
+    if(!stillInCheck){
+      // 玩家成功应将，正确！不给进攻建议
+      return null;
+    }
+    // 玩家没应将(不应该发生，但防御性处理)
+    // 找最佳应将方式
+    xqB=savedBoard.map(function(r){return r.slice()});
+    // 重新撤销走棋
+    if(curMove){
+      var mp=xqB[curMove.tr][curMove.tc];
+      xqB[curMove.fr][curMove.fc]=mp;
+      xqB[curMove.tr][curMove.tc]=(curMove.captured&&curMove.captured!==0)?curMove.captured:0;
+    }
+    var escapeMove=rpFindXQCheckEscape(playerIsRed);
+    if(escapeMove){
+      result={text:'AI建议走'+escapeMove.desc+'。理由：对方正在将军，必须立即应将化解！你实际走法未能解除将军威胁。此处是最佳应将方式', x:escapeMove.tc, y:escapeMove.tr, isOpp:false, xq:true, fromX:escapeMove.fc, fromY:escapeMove.fr};
+    }
+    xqB=savedBoard;
+    return result;
+  }
+
+  // 2. 检查对方是否威胁己方大子(下一手可吃车马炮)
+  var threatenedPiece=rpScanXQThreat(playerIsRed);
+  if(threatenedPiece){
+    // 对方威胁己方大子，检查玩家走棋是否在应对
+    // 恢复棋盘检查走棋后威胁是否解除
+    xqB=savedBoard.map(function(r){return r.slice()});
+    var threatAfter=rpScanXQThreat(playerIsRed);
+    if(!threatAfter){
+      // 玩家成功保护/移走了受威胁的棋子，正确！
+      return null;
+    }
+    // 玩家没应对威胁，建议保护或逃跑
+    xqB=savedBoard.map(function(r){return r.slice()});
+    if(curMove){
+      var mp2=xqB[curMove.tr][curMove.tc];
+      xqB[curMove.fr][curMove.fc]=mp2;
+      xqB[curMove.tr][curMove.tc]=(curMove.captured&&curMove.captured!==0)?curMove.captured:0;
+    }
+    var protectMove=rpFindXQProtectMove(playerIsRed, threatenedPiece);
+    if(protectMove){
+      result={text:'AI建议走'+protectMove.desc+'。理由：己方'+XC_H[threatenedPiece.piece]+'正受到对方威胁，若不处理下一手将被吃。你实际走法未保护受威胁棋子。应优先移走或保护大子，避免物质损失', x:protectMove.tc, y:protectMove.tr, isOpp:false, xq:true, fromX:protectMove.fc, fromY:protectMove.fr};
+    }
+    xqB=savedBoard;
+    return result;
+  }
+
+  // 3. 无威胁，检查是否有更好的吃子机会
   var bestMove=null, bestVal=0;
   var allMoves=xqLegalMoves(xqB,playerIsRed);
   for(var i2=0;i2<allMoves.length;i2++){
     var mv=allMoves[i2];
-    // 跳过和玩家实际走法完全相同的走法
     if(curMove && mv.fr===curMove.fr && mv.fc===curMove.fc && mv.tr===curMove.tr && mv.tc===curMove.tc)continue;
     if(mv.captured && mv.captured!==0){
       var capVal=XV[mv.captured]||0;
       var piece=xqB[mv.fr][mv.fc];
       var myVal=XV[piece]||0;
-      // 检查吃子后是否被反吃
       xqB[mv.tr][mv.tc]=piece;xqB[mv.fr][mv.fc]=0;
       var canBeRecaptured=xqCanCapture(xqB,!playerIsRed,mv.tr,mv.tc);
       xqB[mv.fr][mv.fc]=piece;xqB[mv.tr][mv.tc]=mv.captured;
@@ -1026,10 +1326,59 @@ function rpFindBetterXQMove(playerIsRed, curMove){
     }
   }
 
-  // 4. 恢复玩家走棋后的棋盘状态
+  // 恢复棋盘
   xqB=savedBoard;
-
   return bestMove;
+}
+// 扫描象棋对方对己方大子的威胁
+function rpScanXQThreat(playerIsRed){
+  // 检查对方下一步能吃己方哪些大子(车马炮)
+  var allOppMoves=xqLegalMoves(xqB,!playerIsRed);
+  for(var i=0;i<allOppMoves.length;i++){
+    var mv=allOppMoves[i];
+    if(mv.captured && mv.captured!==0){
+      var val=XV[mv.captured]||0;
+      if(val>=400){ // 车(900) 马(400) 炮(450)
+        return {piece:mv.captured, x:mv.tc, y:mv.tr};
+      }
+    }
+  }
+  return null;
+}
+// 寻找象棋应将方式
+function rpFindXQCheckEscape(playerIsRed){
+  var allMoves=xqLegalMoves(xqB,playerIsRed);
+  for(var i=0;i<allMoves.length;i++){
+    var mv=allMoves[i];
+    var piece=xqB[mv.fr][mv.fc];
+    var cap=xqB[mv.tr][mv.tc];
+    xqB[mv.tr][mv.tc]=piece;xqB[mv.fr][mv.fc]=0;
+    var stillCheck=xqCheck(xqB,playerIsRed);
+    xqB[mv.fr][mv.fc]=piece;xqB[mv.tr][mv.tc]=cap;
+    if(!stillCheck){
+      var col='abcdefghi';
+      return {fr:mv.fr,fc:mv.fc,tr:mv.tr,tc:mv.tc,desc:XC_H[piece]+'('+col[mv.fc]+(10-mv.fr)+'→'+col[mv.tc]+(10-mv.tr)+')'};
+    }
+  }
+  return null;
+}
+// 寻找象棋保护/移走受威胁棋子的走法
+function rpFindXQProtectMove(playerIsRed, threat){
+  var allMoves=xqLegalMoves(xqB,playerIsRed);
+  for(var i=0;i<allMoves.length;i++){
+    var mv=allMoves[i];
+    // 检查走棋后威胁是否解除
+    var piece=xqB[mv.fr][mv.fc];
+    var cap=xqB[mv.tr][mv.tc];
+    xqB[mv.tr][mv.tc]=piece;xqB[mv.fr][mv.fc]=0;
+    var threatAfter=rpScanXQThreat(playerIsRed);
+    xqB[mv.fr][mv.fc]=piece;xqB[mv.tr][mv.tc]=cap;
+    if(!threatAfter){
+      var col='abcdefghi';
+      return {fr:mv.fr,fc:mv.fc,tr:mv.tr,tc:mv.tc,desc:XC_H[piece]+'('+col[mv.fc]+(10-mv.fr)+'→'+col[mv.tc]+(10-mv.tr)+')'};
+    }
+  }
+  return null;
 }
 // 检查象棋某位置是否可以被对方吃
 function xqCanCapture(board, attackerRed, tr, tc){
