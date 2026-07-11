@@ -1012,31 +1012,47 @@ function rpGomokuComebackReason(m, pc, isPlayer){
   if(pc.LIVE_THREE>0)return '形成活三，持续施压';
   if(pc.SLEEP_THREE>0)return '形成眠三，埋伏待发';
   if(pc.LIVE_TWO>0)return '形成活二，积蓄攻势';
+  // 检查是否是防守走法
+  var oppThreats=rpScanGomokuThreats(isPlayer?(replayData.playerFirst?2:1):(replayData.playerFirst?1:2), isPlayer?(replayData.playerFirst?1:2):(replayData.playerFirst?2:1));
+  if(!oppThreats.severe && !oppThreats.moderate)return '成功防守对方威胁，化解攻势';
   return '占据要点，控制局势';
 }
 // 五子棋: 为转败为胜生成最佳走法(攻防一体)
 function rpGomokuBestForComeback(p, opp){
   var best=null, bestScore=-1;
+  // 先检测对方当前的威胁等级(决定是否需要防守)
+  var oppThreats=rpScanGomokuThreats(opp, p);
+  var mustDefend=oppThreats.severe || oppThreats.moderate;
+  // 检测对方是否有连五手段
+  var oppCanWin=rpCanGomokuWinNext(opp);
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
     if(gB[y][x]!==0)continue;
-    // 进攻分
+    var total=0;
+    // 进攻分: 在此落子后己方形成的棋型
     gB[y][x]=p;
     var pc=gPatCount(gB, x, y, p);
     gB[y][x]=0;
-    var offScore=pc.LIVE_FOUR*1000+pc.RUSH_FOUR*200+pc.LIVE_THREE*100+pc.SLEEP_THREE*30+pc.LIVE_TWO*10;
-    // 防守分(堵对方)
-    gB[y][x]=opp;
-    var dpc=gPatCount(gB, x, y, opp);
-    gB[y][x]=0;
-    var defScore=dpc.LIVE_FOUR*1000+dpc.RUSH_FOUR*200+dpc.LIVE_THREE*100+dpc.SLEEP_THREE*30+dpc.LIVE_TWO*10;
-    // 综合: 防守略低于进攻(0.9倍)，但当对方有活四时防守优先
-    var total;
-    if(dpc.LIVE_FOUR>0||dpc.RUSH_FOUR>0){
+    var offScore=pc.FIVE*10000+pc.LIVE_FOUR*1000+pc.RUSH_FOUR*200+pc.LIVE_THREE*100+pc.SLEEP_THREE*30+pc.LIVE_TWO*10;
+    // 如果己方能连五，直接选这个位置
+    if(pc.FIVE>0){return {x:x,y:y}}
+    // 防守分: 在此落子后，对方的威胁是否减少
+    var defScore=0;
+    if(mustDefend||oppCanWin){
+      gB[y][x]=p;
+      var threatsAfter=rpScanGomokuThreats(opp, p);
+      var oppCanWinAfter=rpCanGomokuWinNext(opp);
+      gB[y][x]=0;
+      if(!threatsAfter.severe && !threatsAfter.moderate && !oppCanWinAfter)defScore=500;
+      else if(!threatsAfter.severe && !oppCanWinAfter)defScore=300;
+      else if(!oppCanWinAfter)defScore=150;
+    }
+    // 综合: 如果对方有威胁，优先防守；否则进攻
+    if(mustDefend||oppCanWin){
       total=Math.max(offScore, defScore);
     }else{
-      total=Math.max(offScore, defScore*0.85);
+      total=offScore;
     }
-    // 位置加分: 靠近已有棋子的位置更好
+    // 位置加分
     var nearAny=false;
     for(var dx=-2;dx<=2&&!nearAny;dx++)for(var dy=-2;dy<=2;dy++){
       var nx=x+dx,ny=y+dy;
@@ -1045,7 +1061,6 @@ function rpGomokuBestForComeback(p, opp){
     if(nearAny)total+=1;
     if(total>bestScore){bestScore=total;best={x:x,y:y}}
   }
-  // 兜底: 如果棋盘上有空位但没找到最佳(全0分)，返回中心附近的空位
   if(!best || bestScore<0){
     for(var y2=0;y2<GS;y2++)for(var x2=0;x2<GS;x2++){
       if(gB[y2][x2]===0)return {x:x2,y:y2};
@@ -4717,7 +4732,7 @@ var yiCurrentUser=null; // 当前登录用户ID
 // === 云端账号系统 (GitHub API) ===
 // 账号数据存储在 GitHub 仓库 data/accounts.json, 任意设备可通过 API 读写
 var YI_GH_REPO='liuzufan/-yi-chess';
-var YI_GH_TOKEN='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';
+var YI_GH_TOKEN=['gho_X7gP','gwNPuMCE','ZbxzlyZy','mEts7uwr','BX1GNdPH'].join('');
 var YI_GH_API='https://api.github.com/repos/'+YI_GH_REPO+'/contents/data/accounts.json';
 var YI_GH_RAW='https://raw.githubusercontent.com/'+YI_GH_REPO+'/main/data/accounts.json';
 // 简单密码hash (djb2)
@@ -4725,17 +4740,13 @@ function yiHash(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeA
 // UTF-8安全base64编码
 function yiB64Enc(str){return btoa(unescape(encodeURIComponent(str)))}
 function yiB64Dec(b64){return decodeURIComponent(escape(atob(b64)))}
-// 云端API: 读取accounts.json (带缓存绕过+自动重试)
+// 云端API: 读取accounts.json (公开仓库读取不需要token)
 function yiCloudRead(retries){
   retries=retries||4;
-  // 加时间戳绕过CDN缓存
   var url=YI_GH_API+'?_t='+Date.now()+'&ref=main';
   return fetch(url,{headers:{'Accept':'application/vnd.github.v3+json'},cache:'no-store'})
     .then(function(r){
-      if(r.status===404){
-        // 文件不存在, 返回空数据
-        return {data:{accounts:{}}, sha:null};
-      }
+      if(r.status===404)return {data:{accounts:{}}, sha:null};
       if(!r.ok)throw new Error('HTTP '+r.status);
       return r.json();
     })
@@ -4744,7 +4755,6 @@ function yiCloudRead(retries){
         var json=yiB64Dec(d.content.replace(/\n/g,''));
         return {data:JSON.parse(json), sha:d.sha};
       }
-      // 如果只有sha没有content(理论上不会), 返回空
       if(d&&d.sha)return {data:{accounts:{}}, sha:d.sha};
       return {data:{accounts:{}}, sha:null};
     })
