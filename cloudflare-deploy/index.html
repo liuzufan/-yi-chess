@@ -227,6 +227,7 @@ function saveS(){try{localStorage.setItem('gmk_s',JSON.stringify(stats))}catch(e
 function addS(r){if(r==='w')stats.w++;else if(r==='l')stats.l++;else stats.d++;saveS()}
 
 function $(id){return document.getElementById(id)}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function showOver(t,tx,cls){over=true;var o=$('ov');$('ot').textContent=t;$('ot').className=cls;$('otx').textContent=tx;o.classList.add('show');askSaveOnlineRecord()}
 function hideOver(){over=false;$('ov').classList.remove('show')}
 var pendingDiff=null; // AI思考期间暂存的难度变更
@@ -332,7 +333,7 @@ function openRPModal(){
       var cls=r.result==='win'?'win':r.result==='lose'?'lose':'draw';
       var gameTag=gameNames[r.game]||r.game;
       html+='<div class="rp-item" onclick="openRPViewer('+r.id+')">'+
-        '<div class="rp-info"><span style="color:var(--accent);font-weight:600;margin-right:6px">['+gameTag+']</span>'+r.name+' · '+r.date+' · '+r.moves.length+'手 · 难度'+r.diff+'</div>'+
+        '<div class="rp-info"><span style="color:var(--accent);font-weight:600;margin-right:6px">['+gameTag+']</span>'+esc(r.name)+' · '+r.date+' · '+r.moves.length+'手 · 难度'+r.diff+'</div>'+
         '<div style="display:flex;align-items:center;gap:8px">'+
         '<span class="rp-result '+cls+'">'+resultText[r.result]+'</span>'+
         '<span class="rp-del" onclick="renameReplay('+r.id+',event)">重命名</span>'+
@@ -386,6 +387,11 @@ function openRPViewer(id){
   var rpcx=rpcanvas.getContext('2d');
   // 保存原始cx,恢复时用
   window._origCx=cx;window._origCv=cv;
+  // 保存当前棋盘状态(防止回放污染对局)
+  window._savedState={};
+  if(curGame==='gomoku'){window._savedState.gB=gB.map(function(r){return r.slice()});window._savedState.gLast=gLast}
+  else if(curGame==='go'){window._savedState.goB=goB.map(function(r){return r.slice()});window._savedState.goLast=goLast;window._savedState.goKo=goKo}
+  else if(curGame==='xq'){window._savedState.xqB=xqB.map(function(r){return r.slice()});window._savedState.xqSel=xqSel;window._savedState.xqLegal=xqLegal}
   cx=rpcx;cv=rpcanvas;
   // 初始化空棋盘
   if(r.game==='gomoku'){
@@ -413,6 +419,13 @@ function closeRPViewer(){
   $('rpplaybtn').textContent='▶ 自动';
   // 恢复原始canvas
   if(window._origCx){cx=window._origCx;cv=window._origCv}
+  // 恢复棋盘状态
+  if(window._savedState){
+    if(curGame==='gomoku'&&window._savedState.gB){gB=window._savedState.gB;gLast=window._savedState.gLast}
+    else if(curGame==='go'&&window._savedState.goB){goB=window._savedState.goB;goLast=window._savedState.goLast;goKo=window._savedState.goKo}
+    else if(curGame==='xq'&&window._savedState.xqB){xqB=window._savedState.xqB;xqSel=window._savedState.xqSel;xqLegal=window._savedState.xqLegal}
+    window._savedState=null;
+  }
   // 重绘当前游戏
   if(curGame==='gomoku'&&gB)drawGomoku();
   else if(curGame==='go'&&goB)drawGo();
@@ -675,6 +688,7 @@ function rpGoGroupInfoOnBoard(board, x, y, color){
   var visited={};
   var stack=[[x,y]];
   var libs=0;
+  var libSet={};
   while(stack.length>0){
     var pos=stack.pop();
     var key=pos[0]+','+pos[1];
@@ -684,7 +698,7 @@ function rpGoGroupInfoOnBoard(board, x, y, color){
     for(var d=0;d<4;d++){
       var nx=pos[0]+dirs[d][0],ny=pos[1]+dirs[d][1];
       if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
-      if(board[nx][ny]===0)libs++;
+      if(board[nx][ny]===0){var lk=nx+','+ny;if(!libSet[lk]){libSet[lk]=1;libs++}}
       else if(board[nx][ny]===color&&!visited[nx+','+ny])stack.push([nx,ny]);
     }
   }
@@ -765,8 +779,8 @@ function rpAnalyzeComeback(){
     else if(replayData.game==='go')analysis=rpGoComeback();
     else if(replayData.game==='xq')analysis=rpXQComeback();
     if(!analysis){
-      if(btn)btn.textContent='分析失败';
-      alert('未能生成转败为胜分析，可能是棋局步数太少');
+      if(btn)btn.textContent='转败为胜';
+      alert('棋局步数太少，无法生成转败为胜分析');
       return;
     }
     rpComebackData=analysis;
@@ -789,7 +803,7 @@ function rpToggleComeback(){
     rpComebackData=null;
     rpComebackStep=0;
     var btn=$('rpcomebackbtn');
-    if(btn)btn.textContent='🔍 转败为胜';
+    if(btn)btn.textContent='转败为胜';
     // 恢复到原始回放
     rpRebuildTo(replayStep);
     rpShowComment(replayStep-1,0);
@@ -825,7 +839,7 @@ function rpShowComebackComment(){
   var total=tp+rpComebackData.altMoves.length;
   var stepTxt='第'+(tp+rpComebackStep+1)+'手';
   if(rpComebackStep===0){
-    el.innerHTML='<span style="color:var(--accent);font-weight:bold">🔍 转败为胜分析</span><br>'+
+    el.innerHTML='<span style="color:var(--accent);font-weight:bold">转败为胜分析</span><br>'+
       '<span style="color:var(--ink-s)">'+rpComebackData.reason+'</span><br>'+
       '<span style="color:#8b5e3c;font-size:.76rem;margin-top:4px;display:inline-block">从第'+(tp+1)+'手开始，AI将替代你的棋路进行演示。点击「下一步」查看AI的应对策略</span>';
   }else{
@@ -972,7 +986,7 @@ function rpGomokuComeback(){
       comment=rpGomokuComebackReason(bestM, pc, true);
     }else{
       if(pc.FIVE>0){
-        comment='对手连五，AI模拟失败';
+        comment='对手连五获胜，此路变化无法翻盘';
         altMoves.push({x:bestM.x,y:bestM.y,p:curColor,isPlayer:false,comment:comment});
         break;
       }
@@ -1046,8 +1060,10 @@ function rpGomokuBestForComeback(p, opp){
       else if(!threatsAfter.severe && !oppCanWinAfter)defScore=300;
       else if(!oppCanWinAfter)defScore=150;
     }
-    // 综合: 如果对方有威胁，优先防守；否则进攻
-    if(mustDefend||oppCanWin){
+    // 综合: 如果对方有连五手段，必须防守；有威胁时攻防兼顾；否则进攻
+    if(oppCanWin){
+      total=defScore>0?defScore:offScore;
+    }else if(mustDefend){
       total=Math.max(offScore, defScore);
     }else{
       total=offScore;
@@ -2045,6 +2061,7 @@ function rpScanGoDangerOnBoard(board,myColor){
     var visited={};
     var stack=[[x,y]];
     var libs=0;
+    var libSet={};
     while(stack.length>0){
       var pos=stack.pop();
       var key=pos[0]+','+pos[1];
@@ -2054,7 +2071,7 @@ function rpScanGoDangerOnBoard(board,myColor){
       for(var d=0;d<4;d++){
         var nx=pos[0]+dirs[d][0],ny=pos[1]+dirs[d][1];
         if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
-        if(board[nx][ny]===0)libs++;
+        if(board[nx][ny]===0){var lk=nx+','+ny;if(!libSet[lk]){libSet[lk]=1;libs++}}
         else if(board[nx][ny]===myColor&&!visited[nx+','+ny])stack.push([nx,ny]);
       }
     }
@@ -2067,6 +2084,7 @@ function rpGoGroupInfo(x,y,color){
   var visited={};
   var stack=[[x,y]];
   var libs=0;
+  var libSet={};
   while(stack.length>0){
     var pos=stack.pop();
     var key=pos[0]+','+pos[1];
@@ -2076,7 +2094,7 @@ function rpGoGroupInfo(x,y,color){
     for(var d=0;d<4;d++){
       var nx=pos[0]+dirs[d][0],ny=pos[1]+dirs[d][1];
       if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)continue;
-      if(goB[nx][ny]===0)libs++;
+      if(goB[nx][ny]===0){var lk=nx+','+ny;if(!libSet[lk]){libSet[lk]=1;libs++}}
       else if(goB[nx][ny]===color&&!visited[nx+','+ny])stack.push([nx,ny]);
     }
   }
@@ -2576,7 +2594,7 @@ function enter(g){
   var titles={gomoku:'五子棋',go:'围棋',xq:'象棋'};
   var fts={gomoku:'黑先 · 连五为胜',go:'黑先 · 围地多者胜 · 贴目7.5',xq:'红先 · 将死为胜'};
   $('ntitle').textContent=titles[g];$('ft').textContent=fts[g];
-  $('diffsel').style.display=g==='go'?'flex':'flex';
+  $('diffsel').style.display='flex';
   $('ubtn').style.display=(g==='gomoku'||g==='xq')?'':'none';
   $('rbtn').style.display='';
   $('gpbtn').style.display=g==='go'?'':'none';
@@ -2594,6 +2612,9 @@ function exit(){
   goAbort=true;gAbort=true;xqAbort=true;goAi=false;gAiThink=false;xqAi=false;
   pendingDiff=null;
   goH=null;
+  // 清理回放定时器
+  if(replayTimer){clearTimeout(replayTimer);replayTimer=null}
+  if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
   $('entry').style.display='flex';
   $('game').classList.remove('active');
 }
@@ -2787,7 +2808,7 @@ function gPattern(s){
   // 冲四: 011112, 211110, 11110(边), 01111(边), 11011, 10111, 11101
   if(/[2]11110/.test(s)||/01111[2]/.test(s))return'RUSH_FOUR';
   if(s.indexOf('11011')>=0||s.indexOf('11101')>=0||s.indexOf('10111')>=0)return'RUSH_FOUR';
-  if(/^[2]1111/.test(s)||/1111[2]$/.test(s))return'RUSH_FOUR';
+  if(/^[2]1111/.test(s)||/1111[2]$/.test(s))return'SLEEP_THREE';
   // 活三: 011100, 001110, 010110, 011010
   if(s.indexOf('011100')>=0||s.indexOf('001110')>=0)return'LIVE_THREE';
   if(s.indexOf('010110')>=0||s.indexOf('011010')>=0)return'LIVE_THREE';
@@ -2822,7 +2843,7 @@ function gEvalPt(b,x,y,p){
   // 组合威胁加成
   if(patterns.FIVE>0)return PAT_SCORE.FIVE;
   if(patterns.LIVE_FOUR>0||patterns.RUSH_FOUR>=2)return PAT_SCORE.LIVE_FOUR;
-  if(patterns.RUSH_FOUR>0&&patterns.LIVE_THREE>0)return PAT_SCORE.RUSH_FOUR;
+  if(patterns.RUSH_FOUR>0&&patterns.LIVE_THREE>0)return PAT_SCORE.LIVE_FOUR;
   if(patterns.LIVE_THREE>=2)return PAT_SCORE.LIVE_THREE*2;
   return total;
 }
@@ -2889,14 +2910,16 @@ function gVCF(b,attacker,depth,koHash){
     // 对手防守: 必须阻止冲四
     var opp=3-attacker;
     var defMove=gFindDefend(b,attacker);
-    if(defMove){
-      b[defMove.y][defMove.x]=opp;
-      if(!gCheckWin(b,defMove.x,defMove.y,opp)){
-        var r=gVCF(b,attacker,depth-1);
-        if(r){b[defMove.y][defMove.x]=0;b[y][x]=0;return{x:x,y:y}}
-      }
-      b[defMove.y][defMove.x]=0;
+    if(!defMove){
+      // 对手无法防守冲四/活四，攻击方直接获胜
+      b[y][x]=0;return{x:x,y:y}
     }
+    b[defMove.y][defMove.x]=opp;
+    if(!gCheckWin(b,defMove.x,defMove.y,opp)){
+      var r=gVCF(b,attacker,depth-1);
+      if(r){b[defMove.y][defMove.x]=0;b[y][x]=0;return{x:x,y:y}}
+    }
+    b[defMove.y][defMove.x]=0;
     b[y][x]=0;
     if(gAbort)break;
   }
@@ -2983,17 +3006,7 @@ function gDefendMoves(b,attacker){
   return defs;
 }
 
-// 棋盘全局评估
-function gEvalBoard(aiP,huP){
-  var ai=0,hu=0;
-  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
-    if(gB[y][x]===aiP)ai+=gEvalPt(gB,x,y,aiP);
-    else if(gB[y][x]===huP)hu+=gEvalPt(gB,x,y,huP);
-  }
-  return ai-hu*1.08;
-}
-
-// 评估函数 - 防守权重提升
+// 棋盘全局评估 - 防守权重提升
 function gEvalBoard(aiP,huP){
   var ai=0,hu=0;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
@@ -3422,8 +3435,9 @@ function goNb(x,y){
 function goGrp(b,x,y){
   var c=b[x][y];if(c===0)return{stones:[],liberties:[]};
   var vis={},st=[],lb={},q=[[x,y]];vis[x*GSZ+y]=true;
-  while(q.length>0){
-    var cu=q.shift(),cx2=cu[0],cy2=cu[1];st.push([cx2,cy2]);
+  var qHead=0;
+  while(qHead<q.length){
+    var cu=q[qHead++],cx2=cu[0],cy2=cu[1];st.push([cx2,cy2]);
     var ns=goNb(cx2,cy2);
     for(var i=0;i<ns.length;i++){
       var nx=ns[i][0],ny=ns[i][1],k=nx*GSZ+ny;
@@ -3919,17 +3933,25 @@ function goMCTS(b,c,ko,onMCTSResult){
       }
       // Expansion
       if(node.untried.length>0){
-        var idx=Math.floor(Math.random()*node.untried.length);
-        var mv=node.untried.splice(idx,1)[0];
         var mc2=node.color===1?2:1;
-        var r2=goTry(sb,mv[0],mv[1],mc2,sk);
-        if(r2.valid){sb=r2.newBoard;sk=r2.newKo}
-        var cm=goLegal(sb,mc2===1?2:1,sk),cf=goFilt(sb,cm,mc2===1?2:1);
-        var child={parent:node,move:mv,color:mc2,children:[],visits:0,wins:0,
-          untried:(cf.length>0?cf:cm).map(function(v){return[v[0],v[1]]}),
-          raveV:{},raveW:{}};
-        node.children.push(child);node=child;
-        playedMoves.push({move:mv,color:mc2});
+        var mv=null,r2=null;
+        // 跳过无效着法，避免在不一致棋盘上继续
+        while(node.untried.length>0){
+          var idx=Math.floor(Math.random()*node.untried.length);
+          mv=node.untried.splice(idx,1)[0];
+          r2=goTry(sb,mv[0],mv[1],mc2,sk);
+          if(r2.valid)break;
+          mv=null;r2=null;
+        }
+        if(mv&&r2&&r2.valid){
+          sb=r2.newBoard;sk=r2.newKo;
+          var cm=goLegal(sb,mc2===1?2:1,sk),cf=goFilt(sb,cm,mc2===1?2:1);
+          var child={parent:node,move:mv,color:mc2,children:[],visits:0,wins:0,
+            untried:(cf.length>0?cf:cm).map(function(v){return[v[0],v[1]]}),
+            raveV:{},raveW:{}};
+          node.children.push(child);node=child;
+          playedMoves.push({move:mv,color:mc2});
+        }
       }
       // Simulation
       var sr=goSim(sb,node.color===1?2:1,sk,MAXSIM);
@@ -4037,19 +4059,47 @@ function goPlay(x,y){
 }
 function goEnd(){
   goOver=true;
-  // 使用Benson算法识别无条件活棋
   var alive=goBenson(goB);
-  var s=goScore(goB);
-  // 调整: 活棋区域确定计入
-  var aliveBonus={black:0,white:0};
-  for(var i=0;i<alive[1].length;i++){
-    // 黑棋活棋的区域全部计入黑方
-    aliveBonus.black++;
+  var t=goTerr(goB);
+  // 识别死子: 不在活棋集中且所有气都在对方地盘中的棋串
+  var aliveSet={};
+  for(var c in alive){
+    for(var i=0;i<alive[c].length;i++){
+      for(var j=0;j<alive[c][i].stones.length;j++){
+        aliveSet[alive[c][i].stones[j][0]*GSZ+alive[c][i].stones[j][1]]=parseInt(c);
+      }
+    }
   }
-  for(var i=0;i<alive[2].length;i++){
-    aliveBonus.white++;
+  var deadStones=[];
+  var deadVisited={};
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    var k=x*GSZ+y;
+    if(goB[x][y]===0||deadVisited[k])continue;
+    var c=goB[x][y];
+    var grp=goGrp(goB,x,y);
+    for(var j=0;j<grp.stones.length;j++)deadVisited[grp.stones[j][0]*GSZ+grp.stones[j][1]]=true;
+    var isAlive=false;
+    for(var j=0;j<grp.stones.length;j++){
+      if(aliveSet[grp.stones[j][0]*GSZ+grp.stones[j][1]]===c){isAlive=true;break}
+    }
+    if(!isAlive&&grp.liberties.length>0){
+      var allInOppTerr=true;
+      for(var j=0;j<grp.liberties.length;j++){
+        var lk=parseInt(grp.liberties[j]);
+        var lx=Math.floor(lk/GSZ),ly=lk%GSZ;
+        if(t[lx][ly]!==3-c){allInOppTerr=false;break}
+      }
+      if(allInOppTerr){
+        for(var j=0;j<grp.stones.length;j++)deadStones.push(grp.stones[j]);
+      }
+    }
   }
-  var resultTxt='黑'+s.black.toFixed(1)+' 白'+s.white.toFixed(1);
+  // 移除死子后重新计分
+  var scoreB=goB.map(function(r){return r.slice()});
+  for(var i=0;i<deadStones.length;i++)scoreB[deadStones[i][0]][deadStones[i][1]]=0;
+  var s=goScore(scoreB);
+  var deadInfo=deadStones.length>0?' (移除死子'+deadStones.length+'枚)':'';
+  var resultTxt='黑'+s.black.toFixed(1)+' 白'+s.white.toFixed(1)+deadInfo;
   if(s.black>s.white){addS('w');showOver('胜',resultTxt,'win')}
   else if(s.white>s.black){addS('l');showOver('负',resultTxt,'lose')}
   else{showOver('和',resultTxt,'draw')}
@@ -4070,16 +4120,19 @@ var xqNodes,xqStart,xqAbort,xqPv;
 
 function initXQ(){
   cv=$('bd');cv.width=XW;cv.height=XH;cx=cv.getContext('2d');
-  xqB=[[12,11,10,9,8,9,10,11,12],[0,0,0,0,0,0,0,0,0],[0,13,0,0,0,0,0,13,0],[14,0,14,0,14,0,14,0,14],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[7,0,7,0,7,0,7,0,7],[0,6,0,0,0,0,0,6,0],[0,0,0,0,0,0,0,0,0],[5,4,3,2,1,2,3,4,5]];
-  xqRed=playerFirst;xqAiRed=!playerFirst;xqSel=null;xqLegal=[];xqHist=[];xqOver=false;xqAi=false;xqTT=new Map();hideOver();showAIInfo('');
+  xqB=xqInitBoard();
+  xqRed=playerFirst;xqAiRed=!playerFirst;xqSel=null;xqLegal=[];xqHist=[];xqOver=false;xqAi=false;xqTT=new Map();xqKiller=[];xqHist2=[];xqNodes=0;xqAbort=false;hideOver();showAIInfo('');
   $('p1').textContent=playerFirst?'你（红）':'AI（红）';$('p2').textContent=playerFirst?'AI（黑）':'你（黑）';$('st').textContent=playerFirst?'你的回合':'AI回合';$('xm').innerHTML='';
   setupEv();drawXQ();
   // 如果电脑先手(AI下红棋)
   if(!playerFirst){
     $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';xqAi=true;
     setTimeout(function(){
-      var bm=xqAIMove();xqAi=false;
-      if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+      try{
+        var bm=xqAIMove();
+        if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+      }catch(e){console.error('XQ AI init error:',e)}
+      xqAi=false;
       xqRed=false;drawXQ();xqUpdM();
       var mc=xqCheck(xqB,false)?' 你被将军':'';
       $('st').textContent='你的回合'+mc;
@@ -4116,10 +4169,32 @@ function xqGP(b,r,c,p,m){
 function xqKing(b,red){var tg=red?1:8;for(var r=0;r<10;r++)for(var c=0;c<9;c++)if(b[r][c]===tg)return[r,c];return null}
 function xqCheck(b,red){
   var k=xqKing(b,red);if(!k)return true;
+  var kr=k[0],kc=k[1];
+  // 飞将检测
   var ok=xqKing(b,!red);
-  if(ok&&k[1]===ok[1]){var cnt=0;for(var r=Math.min(k[0],ok[0])+1;r<Math.max(k[0],ok[0]);r++)if(b[r][k[1]]!==0)cnt++;if(cnt===0)return true}
-  var om=xqGen(b,!red);
-  for(var i=0;i<om.length;i++)if(om[i].tr===k[0]&&om[i].tc===k[1])return true;
+  if(ok&&kc===ok[1]){var cnt=0;for(var r=Math.min(kr,ok[0])+1;r<Math.max(kr,ok[0]);r++)if(b[r][kc]!==0)cnt++;if(cnt===0)return true}
+  // 反向查攻击: 只检查车、炮、马、兵能否攻击到王位(仕相将无法攻击对方王)
+  for(var r=0;r<10;r++)for(var c=0;c<9;c++){
+    var p=b[r][c];if(p===0)continue;
+    if(xqRedP(p)===red)continue;
+    var t=xqType(p);
+    if(t===5){ // 车: 同行同列无阻挡
+      if(r===kr){var bl=false;for(var i=Math.min(c,kc)+1;i<Math.max(c,kc);i++)if(b[r][i]!==0){bl=true;break}if(!bl)return true}
+      if(c===kc){var bl2=false;for(var i=Math.min(r,kr)+1;i<Math.max(r,kr);i++)if(b[i][c]!==0){bl2=true;break}if(!bl2)return true}
+    }else if(t===6){ // 炮: 同行同列且正好一个炮架
+      if(r===kr){var cn=0;for(var i=Math.min(c,kc)+1;i<Math.max(c,kc);i++)if(b[r][i]!==0)cn++;if(cn===1)return true}
+      if(c===kc){var cn2=0;for(var i=Math.min(r,kr)+1;i<Math.max(r,kr);i++)if(b[i][c]!==0)cn2++;if(cn2===1)return true}
+    }else if(t===4){ // 马: L形+蹩马腿
+      var adR=Math.abs(kr-r),adC=Math.abs(kc-c);
+      if(adR===2&&adC===1){var lr=r+(kr-r)/2;if(b[lr]&&b[lr][c]===0)return true}
+      else if(adR===1&&adC===2){if(b[r]&&b[r][c+(kc-c)/2]===0)return true}
+    }else if(t===7){ // 兵/卒
+      var fwd=(p===7)?-1:1;
+      if(r+fwd===kr&&c===kc)return true;
+      var crossed=(p===7)?r<=4:r>=5;
+      if(crossed&&r===kr&&Math.abs(c-kc)===1)return true;
+    }
+  }
   return false;
 }
 function xqLegalMoves(b,red){
@@ -4133,8 +4208,8 @@ function xqLegalMoves(b,red){
 }
 // Zobrist哈希
 var xqZob=[];
-for(var i=0;i<15*10*9;i++)xqZob.push(Math.random()*0xFFFFFFFF);
-var xqZobRed=Math.random()*0xFFFFFFFF;
+for(var i=0;i<15*10*9;i++)xqZob.push((Math.random()*0xFFFFFFFF)>>>0);
+var xqZobRed=(Math.random()*0xFFFFFFFF)>>>0;
 function xqH(b,red){
   var h=red?xqZobRed:0;
   for(var r=0;r<10;r++)for(var c=0;c<9;c++){
@@ -4635,6 +4710,7 @@ function drawXQP(px,py,p){
   cx.fillText(XC_H[p],px-0.5,py-0.5);cx.restore();
 }
 function xqPlay(r,c){
+  if(!xqInB(r,c))return;
   var playerIsRed=playerFirst;
   if(xqOver||xqAi)return;
   // 玩家只能在自己的回合操作
@@ -4649,8 +4725,11 @@ function xqPlay(r,c){
       var ck=xqCheck(xqB,xqAiRed)?' 将军':'';
       $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>'+ck;xqAi=true;
       setTimeout(function(){
-        var bm=xqAIMove();xqAi=false;
-        if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+        try{
+          var bm=xqAIMove();
+          if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+        }catch(e){console.error('XQ AI error:',e)}
+        xqAi=false;
         xqRed=!xqAiRed;drawXQ();xqUpdM();
         var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');return}
         var mc=xqCheck(xqB,playerIsRed)?' 你被将军':'';
@@ -4684,7 +4763,7 @@ $('ubtn').onclick=function(){
   }
   else if(curGame==='xq'&&!xqOver&&!xqAi&&xqHist.length>=2){
     for(var i=0;i<2;i++){var m=xqHist.pop();if(m){xqB[m.fr][m.fc]=xqB[m.tr][m.tc];xqB[m.tr][m.tc]=m.captured}}
-    xqRed=true;drawXQ();xqUpdM();
+    xqSel=null;xqLegal=[];xqRed=playerFirst;drawXQ();xqUpdM();
   }
 };
 $('gpbtn').onclick=function(){
@@ -4695,10 +4774,13 @@ $('gpbtn').onclick=function(){
     $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
     goAi=true;
     setTimeout(function(){
-      var m=goMCTS(goB,2,goKo);goAi=false;
-      if(!m){goPass++;if(goPass>=2){goEnd();return}}
-      else{var r=goTry(goB,m.move[0],m.move[1],2,goKo);if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:m.move[0],y:m.move[1],c:2};if(r.captured.length>0)goCaps[1]+=r.captured.length;drawGo()}goPass=0}
-      goCur=1;$('st').textContent='请落子';
+      goMCTS(goB,2,goKo,function(m){
+        goAi=false;
+        if(goAbort)return;
+        if(!m){goPass++;if(goPass>=2){goEnd();return}}
+        else{var r=goTry(goB,m.move[0],m.move[1],2,goKo);if(r.valid){goB=r.newBoard;goKo=r.newKo;goLast={x:m.move[0],y:m.move[1],c:2};if(r.captured.length>0)goCaps[1]+=r.captured.length;drawGo()}goPass=0}
+        goCur=1;$('st').textContent='请落子';applyPendingDiff();
+      });
     },50);
   }
 };
@@ -4821,7 +4903,7 @@ function showLoginView(){
   var html='<div class="acct-card">'+
     '<div class="acct-title">棋手登录</div>'+
     '<div class="acct-subtitle">云端存档 · 跨设备同步</div>'+
-    '<input class="acct-input" id="loginId" placeholder="输入棋手ID" maxlength="20" value="'+lastId.replace(/"/g,'&quot;')+'">'+
+    '<input class="acct-input" id="loginId" placeholder="输入棋手ID" maxlength="20" value="'+esc(lastId)+'">'+
     '<input class="acct-input" id="loginPw" type="password" placeholder="输入密码">'+
     '<button class="acct-btn acct-btn-primary" onclick="doLogin()">登 录</button>'+
     '<button class="acct-btn acct-btn-secondary" onclick="showRegisterView()">注册新棋手</button>'+
@@ -4857,6 +4939,7 @@ function doLogin(){
   var id=$('loginId').value.trim();
   var pw=$('loginPw').value;
   if(!id){alert('请输入棋手ID');return}
+  if(/[<>"'&]/.test(id)){alert('棋手ID不能包含特殊字符');return}
   if(!pw){alert('请输入密码');return}
   acctLoading('正在连接云端...');
   yiCloudRead().then(function(result){
@@ -4905,6 +4988,7 @@ function doRegister(){
   var pw=$('regPw').value;
   var pw2=$('regPw2').value;
   if(!id){alert('请输入棋手ID');return}
+  if(/[<>"'&]/.test(id)){alert('棋手ID不能包含特殊字符');return}
   if(!pw){alert('请输入密码');return}
   if(pw!==pw2){alert('两次密码不一致');return}
   acctLoading('正在注册...');
@@ -4960,7 +5044,7 @@ function renderRecords(records){
   var names={gomoku:'五子棋',go:'围棋',xq:'象棋'};
   var diffs=['','入门','进阶','高手','大师'];
   var html='<div class="acct-card" style="max-width:480px">'+
-    '<div class="acct-title">棋手：'+yiCurrentUser+'</div>'+
+    '<div class="acct-title">棋手：'+esc(yiCurrentUser)+'</div>'+
     '<div class="acct-subtitle">对局战绩</div>'+
     '<div class="acct-stats">'+
     '<div class="acct-stat"><div class="acct-stat-num">'+total+'</div><div class="acct-stat-label">总对局</div></div>'+
