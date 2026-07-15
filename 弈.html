@@ -81,6 +81,8 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 .rp-box{background:var(--paper);border-radius:var(--rl);padding:24px 32px;max-width:520px;width:90vw;max-height:80vh;overflow-y:auto;margin:auto}
 .rp-box h3{font-size:1.1rem;letter-spacing:6px;margin-bottom:16px;text-align:center;font-weight:400}
 .rp-list{display:flex;flex-direction:column;gap:8px}
+.rp-search{width:100%;padding:8px 12px;border:1px solid var(--paper-d);border-radius:8px;font-family:var(--serif);font-size:.8rem;color:var(--ink);background:var(--paper);margin-bottom:10px;outline:none;transition:border-color .2s}
+.rp-search:focus{border-color:var(--accent)}
 .rp-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--paper-w);border:1px solid var(--paper-d);border-radius:var(--r);cursor:pointer;transition:all .2s}
 .rp-item:hover{border-color:var(--accent-s);transform:translateX(4px)}
 .rp-item .rp-info{font-size:.78rem;color:var(--ink-s)}
@@ -206,6 +208,9 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 <button id="xrbtn" style="display:none">认输</button>
 <button id="svbtn">保存棋局</button>
 <button id="rpbtn">棋谱回放</button>
+<button id="coordbtn" onclick="toggleCoords()">坐标 关</button>
+<button id="sndbtn" onclick="toggleSound()">声音 开</button>
+<button id="expbtn" onclick="exportBoardImage()">导出图片</button>
 </div>
 <div id="aiinfo"></div>
 <div id="xm"></div>
@@ -261,6 +266,86 @@ function showAIInfo(html){
   var el=$('aiinfo');
   if(html){el.innerHTML=html;el.className='show'}
   else el.className='';
+}
+// === 音效系统 (Web Audio API, 无外部文件) ===
+var soundOn=(function(){try{return localStorage.getItem('yi_sound')!=='0'}catch(e){return true}})();
+var audioCtx=null;
+function getAudioCtx(){
+  if(!audioCtx){
+    try{audioCtx=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
+  }
+  return audioCtx;
+}
+function playSound(type){
+  if(!soundOn)return;
+  var ctx=getAudioCtx();if(!ctx)return;
+  if(ctx.state==='suspended')ctx.resume();
+  var now=ctx.currentTime;
+  var osc=ctx.createOscillator(),gain=ctx.createGain();
+  osc.connect(gain);gain.connect(ctx.destination);
+  if(type==='place'){
+    osc.type='sine';osc.frequency.setValueAtTime(280,now);
+    osc.frequency.exponentialRampToValueAtTime(120,now+.08);
+    gain.gain.setValueAtTime(.15,now);
+    gain.gain.exponentialRampToValueAtTime(.001,now+.12);
+    osc.start(now);osc.stop(now+.12);
+  }else if(type==='capture'){
+    osc.type='triangle';osc.frequency.setValueAtTime(180,now);
+    osc.frequency.exponentialRampToValueAtTime(60,now+.15);
+    gain.gain.setValueAtTime(.2,now);
+    gain.gain.exponentialRampToValueAtTime(.001,now+.2);
+    osc.start(now);osc.stop(now+.2);
+  }else if(type==='select'){
+    osc.type='sine';osc.frequency.setValueAtTime(500,now);
+    gain.gain.setValueAtTime(.06,now);
+    gain.gain.exponentialRampToValueAtTime(.001,now+.06);
+    osc.start(now);osc.stop(now+.06);
+  }else if(type==='win'){
+    [523,659,784,1047].forEach(function(f,i){
+      var o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);
+      o.type='sine';o.frequency.value=f;
+      g.gain.setValueAtTime(0,now+i*.1);
+      g.gain.linearRampToValueAtTime(.12,now+i*.1+.02);
+      g.gain.exponentialRampToValueAtTime(.001,now+i*.1+.3);
+      o.start(now+i*.1);o.stop(now+i*.1+.3);
+    });
+  }else if(type==='lose'){
+    [400,350,280,200].forEach(function(f,i){
+      var o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);
+      o.type='triangle';o.frequency.value=f;
+      g.gain.setValueAtTime(0,now+i*.12);
+      g.gain.linearRampToValueAtTime(.1,now+i*.12+.02);
+      g.gain.exponentialRampToValueAtTime(.001,now+i*.12+.35);
+      o.start(now+i*.12);o.stop(now+i*.12+.35);
+    });
+  }
+}
+function toggleSound(){
+  soundOn=!soundOn;
+  try{localStorage.setItem('yi_sound',soundOn?'1':'0')}catch(e){}
+  $('sndbtn').textContent=soundOn?'声音 开':'声音 关';
+  if(soundOn)playSound('select');
+}
+// === 棋盘坐标显示开关 ===
+var showCoords=false;
+function toggleCoords(){
+  showCoords=!showCoords;
+  $('coordbtn').textContent=showCoords?'坐标 开':'坐标 关';
+  if(curGame==='gomoku')drawGomoku();
+  else if(curGame==='go')drawGo();
+  else if(curGame==='xq')drawXQ();
+}
+// === 导出棋盘图片 ===
+function exportBoardImage(){
+  var canvas=$('bd');
+  var dataUrl=canvas.toDataURL('image/png');
+  var a=document.createElement('a');
+  var names={gomoku:'五子棋',go:'围棋',xq:'象棋'};
+  a.href=dataUrl;
+  a.download=names[curGame]+'_'+new Date().toISOString().slice(0,10)+'.png';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 function setTurn(t){
   playerFirst = t===1;
@@ -322,6 +407,9 @@ function openRPModal(){
   var list=$('rplist');
   // 按分类筛选
   var filtered=rpFilter==='all'?replays:replays.filter(function(r){return r.game===rpFilter});
+  // 按搜索关键词过滤
+  var kw=$('rpsearch')?$('rpsearch').value.trim().toLowerCase():'';
+  if(kw)filtered=filtered.filter(function(r){return(r.name||'').toLowerCase().indexOf(kw)>=0||(r.date||'').toLowerCase().indexOf(kw)>=0});
   var gameNames={gomoku:'五子棋',go:'围棋',xq:'象棋'};
   if(filtered.length===0){
     list.innerHTML='<div class="rp-empty">'+(rpFilter==='all'?'暂无保存的棋局':'暂无'+gameNames[rpFilter]+'棋局')+'</div>';
@@ -345,6 +433,7 @@ function openRPModal(){
   $('rpmodal').classList.add('show');
 }
 function closeRPModal(){$('rpmodal').classList.remove('show')}
+function filterReplays(){openRPModal()}
 function delReplay(id,e){
   e.stopPropagation();
   var replays=getReplays().filter(function(r){return r.id!==id});
@@ -2618,6 +2707,34 @@ function exit(){
   $('entry').style.display='flex';
   $('game').classList.remove('active');
 }
+// === 快捷键支持 ===
+document.addEventListener('keydown',function(e){
+  // 只在游戏界面激活时响应
+  if(!$('game').classList.contains('active'))return;
+  // Ctrl+Z: 悔棋
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'){
+    e.preventDefault();
+    var ub=$('ubtn');
+    if(ub&&ub.style.display!=='none'&&!ub.disabled)ub.onclick();
+    return;
+  }
+  // Esc: 退出
+  if(e.key==='Escape'){
+    e.preventDefault();exit();return;
+  }
+  // 空格: 围棋停一手
+  if(e.key===' '&&curGame==='go'){
+    e.preventDefault();
+    var gb=$('gpbtn');
+    if(gb&&gb.style.display!=='none'&&!goOver&&!goAi)gb.onclick();
+    return;
+  }
+  // R: 重开
+  if(e.key==='r'||e.key==='R'){
+    e.preventDefault();
+    $('rbtn').onclick();return;
+  }
+});
 
 // 画棋子球体 — 增强质感：多层渐变+高光+边缘反射
 function drawBall(px,py,r,black){
@@ -3317,7 +3434,7 @@ function gAIMove(){
     // 时间检查
     if(Date.now()-gStart>timeLimit)break;
   }
-  info='<span class="tag">搜索</span> 深度'+maxDepth+' 节点'+gNodes;
+  info='<span class="tag">搜索</span> 深度'+maxDepth+' 节点'+gNodes+' 耗时'+((Date.now()-gStart)/1000).toFixed(1)+'s';
   if(bs>800000)info+=' [优势]';
   else if(bs<-800000)info+=' [劣势]';
   showAIInfo(info);
@@ -3365,19 +3482,25 @@ function drawGomoku(){
     cx.strokeStyle=gLast.p===1?'rgba(212,168,90,.95)':'rgba(200,120,120,.95)';
     cx.lineWidth=2;cx.beginPath();cx.arc(GP+gLast.x*GC,GP+gLast.y*GC,GR+4,0,Math.PI*2);cx.stroke();
   }
+  // 坐标显示
+  if(showCoords){
+    cx.fillStyle='rgba(107,82,48,.55)';cx.font='9px Georgia,serif';cx.textAlign='center';cx.textBaseline='middle';
+    var L='ABCDEFGHIJKLMNO';
+    for(var i=0;i<GS;i++){cx.fillText(L[i],GP+i*GC,GP-14);cx.fillText(String(GS-i),GP-14,GP+i*GC)}
+  }
 }
 function gomokuPlay(x,y){
   var playerColor=playerFirst?1:2;
   var aiColor=playerFirst?2:1;
   if(over||gAiThink||gCur!==playerColor||gB[y][x]!==0)return;
-  gB[y][x]=playerColor;gH.push({x:x,y:y,p:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:x,y:y,p:playerColor};drawGomoku();
-  if(gCheckWin(gB,x,y,playerColor)){addS('w');showOver('胜','你赢了','win');return}
+  gB[y][x]=playerColor;gH.push({x:x,y:y,p:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:x,y:y,p:playerColor};drawGomoku();playSound('place');
+  if(gCheckWin(gB,x,y,playerColor)){addS('w');showOver('胜','你赢了','win');playSound('win');return}
   gCur=aiColor;updSt();gAiThink=true;updCursor();
   $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
   setTimeout(function(){
     var m=gAIMove();
-    if(m){gB[m.y][m.x]=aiColor;gH.push({x:m.x,y:m.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:aiColor};drawGomoku();
-      if(gCheckWin(gB,m.x,m.y,aiColor)){addS('l');showOver('负','再来一局','lose');gAiThink=false;updCursor();applyPendingDiff();return}
+    if(m){gB[m.y][m.x]=aiColor;gH.push({x:m.x,y:m.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:aiColor};drawGomoku();playSound('place');
+      if(gCheckWin(gB,m.x,m.y,aiColor)){addS('l');showOver('负','再来一局','lose');playSound('lose');gAiThink=false;updCursor();applyPendingDiff();return}
     }
     gCur=playerColor;gAiThink=false;updSt();updCursor();applyPendingDiff();
   },50);
@@ -4032,7 +4155,7 @@ function goPlay(x,y){
   var r=goTry(goB,x,y,playerColor,goKo);
   if(!r.valid)return;
   goB=r.newBoard;goKo=r.newKo;goLast={x:x,y:y,c:playerColor};goPass=0;goHist.push({x:x,y:y,c:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});
-  if(r.captured.length>0)goCaps[playerFirst?0:1]+=r.captured.length;
+  if(r.captured.length>0){goCaps[playerFirst?0:1]+=r.captured.length;playSound('capture')}else{playSound('place')}
   drawGo();
   var aiColor=playerFirst?2:1;
   goCur=aiColor;
@@ -4049,7 +4172,7 @@ function goPlay(x,y){
     var r2=goTry(goB,m.move[0],m.move[1],aiColor,goKo);
     if(r2.valid){
       goB=r2.newBoard;goKo=r2.newKo;goLast={x:m.move[0],y:m.move[1],c:aiColor};goHist.push({x:m.move[0],y:m.move[1],c:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});
-      if(r2.captured.length>0)goCaps[playerFirst?1:0]+=r2.captured.length;
+      if(r2.captured.length>0){goCaps[playerFirst?1:0]+=r2.captured.length;playSound('capture')}else{playSound('place')}
       drawGo();
     }
     goPass=0;
@@ -4610,7 +4733,7 @@ function xqAIMove(){
     }
     if(Math.abs(ds)>98900)break;
   }
-  var info='<span class="tag">搜索</span> 深度'+(d-1)+' 节点'+xqNodes;
+  var info='<span class="tag">搜索</span> 深度'+(d-1)+' 节点'+xqNodes+' 耗时'+((Date.now()-xqStart)/1000).toFixed(1)+'s';
   if(bestScore>90000)info+=' [优势]';
   else if(bestScore<-90000)info+=' [劣势]';
   showAIInfo(info);
@@ -4667,6 +4790,12 @@ function drawXQ(){
       }
     }
   }
+  // 坐标显示
+  if(showCoords){
+    cx.fillStyle='rgba(107,82,48,.55)';cx.font='9px Georgia,serif';cx.textAlign='center';cx.textBaseline='middle';
+    for(var cc=0;cc<9;cc++)cx.fillText(String.fromCharCode(65+cc),XP+cc*XC,XP-14);
+    for(var rr=0;rr<10;rr++)cx.fillText(String(10-rr),XP-14,XP+rr*XC);
+  }
 }
 function drawXQP(px,py,p){
   var red=xqRedP(p),r=24;
@@ -4720,18 +4849,19 @@ function xqPlay(r,c){
     var m=null;for(var i=0;i<xqLegal.length;i++)if(xqLegal[i].tr===r&&xqLegal[i].tc===c){m=xqLegal[i];break}
     if(m){
       m.t=Math.round((Date.now()-gameStartTime)/1000);
+      if(m.captured!==0)playSound('capture');else playSound('place');
       xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0;xqHist.push(m);xqSel=null;xqLegal=[];xqRed=!xqRed;drawXQ();xqUpdM();
-      var om=xqLegalMoves(xqB,xqAiRed);if(om.length===0){addS('w');showOver('胜','将死对手','win');return}
+      var om=xqLegalMoves(xqB,xqAiRed);if(om.length===0){addS('w');showOver('胜','将死对手','win');playSound('win');return}
       var ck=xqCheck(xqB,xqAiRed)?' 将军':'';
       $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>'+ck;xqAi=true;
       setTimeout(function(){
         try{
           var bm=xqAIMove();
-          if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+          if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);if(bm.captured!==0)playSound('capture');else playSound('place');xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
         }catch(e){console.error('XQ AI error:',e)}
         xqAi=false;
         xqRed=!xqAiRed;drawXQ();xqUpdM();
-        var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');return}
+        var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');playSound('lose');return}
         var mc=xqCheck(xqB,playerIsRed)?' 你被将军':'';
         $('st').textContent='你的回合'+mc;
         applyPendingDiff();
@@ -4741,7 +4871,7 @@ function xqPlay(r,c){
   }
   var p=xqB[r][c];
   var canSelect=playerIsRed?xqRedP(p):!xqRedP(p);
-  if(p!==0&&canSelect){xqSel=[r,c];xqLegal=xqLegalMoves(xqB,playerIsRed).filter(function(m){return m.fr===r&&m.fc===c});drawXQ()}
+  if(p!==0&&canSelect){xqSel=[r,c];xqLegal=xqLegalMoves(xqB,playerIsRed).filter(function(m){return m.fr===r&&m.fc===c});drawXQ();playSound('select')}
 }
 function xqUpdM(){
   var el=$('xm'),col='abcdefghi';
@@ -4801,6 +4931,7 @@ document.body.insertAdjacentHTML('beforeend',
 '<span class="rp-tab" onclick="setRPTab(\'go\',this)">围棋</span>'+
 '<span class="rp-tab" onclick="setRPTab(\'xq\',this)">象棋</span>'+
 '</div>'+
+'<input class="rp-search" id="rpsearch" placeholder="搜索棋谱名称或日期..." oninput="filterReplays()">'+
 '<div class="rp-list" id="rplist"></div>'+
 '<button class="rp-close" onclick="closeRPModal()">关闭</button></div></div>'+
 '<div class="rp-viewer" id="rpviewer">'+
