@@ -19,3 +19,8 @@ npm-debug.log
 # Temp
 *.tmp
 *.bak
+
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
