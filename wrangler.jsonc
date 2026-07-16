@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yi-chess007",
+  "compatibility_date": "2026-07-16",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "cloudflare-deploy"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
