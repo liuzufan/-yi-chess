@@ -412,6 +412,8 @@ function exit(){
   // 中断所有AI计算
   goAbort=true;gAbort=true;xqAbort=true;goAi=false;gAiThink=false;xqAi=false;
   goH=null;
+  // 清理回放定时器
+  if(replayTimer){clearInterval(replayTimer);replayTimer=null}
   $('entry').style.display='flex';
   $('game').classList.remove('active');
 }

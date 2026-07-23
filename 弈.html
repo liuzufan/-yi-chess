@@ -4840,7 +4840,8 @@ function yiCloudRead(retries){
     .then(function(d){
       if(d&&d.content){
         var json=yiB64Dec(d.content.replace(/\n/g,''));
-        return {data:JSON.parse(json), sha:d.sha};
+        try { return {data:JSON.parse(json), sha:d.sha}; }
+        catch(e) { return {data:{accounts:{}}, sha:d.sha}; }
       }
       if(d&&d.sha)return {data:{accounts:{}}, sha:d.sha};
       return {data:{accounts:{}}, sha:null};
@@ -5061,11 +5062,11 @@ function renderRecords(records){
       var resultText=r.result==='win'?'胜':r.result==='lose'?'负':'平';
       var resultClass=r.result==='win'?'acct-result-win':r.result==='lose'?'acct-result-lose':'acct-result-draw';
       html+='<div class="acct-record">'+
-        '<span>'+r.date+'</span>'+
-        '<span>'+(names[r.game]||r.game)+'</span>'+
+        '<span>'+esc(r.date)+'</span>'+
+        '<span>'+(names[r.game]||esc(r.game))+'</span>'+
         '<span>'+(diffs[r.diff]||'')+'</span>'+
         '<span class="acct-record-result '+resultClass+'">'+resultText+'</span>'+
-        '<span>'+r.moves+'手</span>'+
+        '<span>'+esc(r.moves)+'手</span>'+
         '</div>';
     }
     html+='</div>';
