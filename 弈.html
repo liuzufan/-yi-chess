@@ -2709,32 +2709,153 @@ function exit(){
 }
 // === 快捷键支持 ===
 document.addEventListener('keydown',function(e){
-  // 只在游戏界面激活时响应
+  // 输入框聚焦时不触发快捷键
+  var tag=(e.target&&e.target.tagName)||'';
+  if(tag==='INPUT'||tag==='TEXTAREA'||(e.target&&e.target.isContentEditable))return;
+  // 只在游戏界面激活且无弹窗时响应
   if(!$('game').classList.contains('active'))return;
+  if(document.querySelector('.modal.show,.rp-modal.show,.rp-viewer.show'))return;
   // Ctrl+Z: 悔棋
-  if((e.ctrlKey||e.metaKey)&&e.key==='z'){
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){
     e.preventDefault();
     var ub=$('ubtn');
-    if(ub&&ub.style.display!=='none'&&!ub.disabled)ub.onclick();
+    if(ub&&ub.style.display!=='none'&&!ub.disabled&&ub.onclick)ub.onclick();
     return;
   }
-  // Esc: 退出
+  // Esc: 退出（弹窗打开时只关弹窗）
   if(e.key==='Escape'){
-    e.preventDefault();exit();return;
+    e.preventDefault();
+    var mm=document.querySelector('.modal.show');
+    if(mm){mm.classList.remove('show');return}
+    var rm=document.querySelector('.rp-viewer.show');
+    if(rm){if(typeof closeRPViewer==='function')closeRPViewer();return}
+    exit();return;
   }
   // 空格: 围棋停一手
   if(e.key===' '&&curGame==='go'){
     e.preventDefault();
     var gb=$('gpbtn');
-    if(gb&&gb.style.display!=='none'&&!goOver&&!goAi)gb.onclick();
+    if(gb&&gb.style.display!=='none'&&!goOver&&!goAi&&gb.onclick)gb.onclick();
     return;
   }
-  // R: 重开
-  if(e.key==='r'||e.key==='R'){
+  // R: 重开（需双击R或长按，防误触：仅对局非空时）
+  if((e.key==='r'||e.key==='R')&&!e.ctrlKey&&!e.altKey){
     e.preventDefault();
-    $('rbtn').onclick();return;
+    if(typeof lastRKick==='undefined')lastRKick=0;
+    if(Date.now()-lastRKick<600){$('rbtn').onclick();lastRKick=0}
+    else lastRKick=Date.now();
+    return;
   }
 });
+var lastRKick=0;
+
+// ============================================================
+//  落子动画系统 — rAF驱动: 下落弹跳 + 涟漪扩散 + 棋子滑动
+// ============================================================
+var placeAnims=[];
+var animRAFId=null;
+function makeSnapshot(){
+  var s=document.createElement('canvas');
+  s.width=cv.width;s.height=cv.height;
+  s.getContext('2d').drawImage(cv,0,0);
+  return s;
+}
+function easeOutCubic(t){return 1-Math.pow(1-t,3)}
+function easeOutBack(t){var c1=1.70158,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2)}
+// 触发落子动画 kind: 'drop'下落(五子/围棋) 'slide'滑动(象棋)
+function addPlaceAnim(opts){
+  placeAnims.push({
+    kind:opts.kind||'drop',
+    fx:opts.fx,fy:opts.fy,tx:opts.tx,ty:opts.ty,
+    r:opts.r,piece:opts.piece,black:opts.black,
+    dur:opts.kind==='slide'?260:300,
+    start:performance.now(),
+    snapshot:opts.snapshot||null
+  });
+  if(animRAFId===null)animRAFId=requestAnimationFrame(stepPlaceAnims);
+}
+function stepPlaceAnims(){
+  var now=performance.now();
+  // 恢复背景快照(消除上一帧残影)
+  var snap=placeAnims.length>0?placeAnims[0].snapshot:null;
+  if(snap)cx.drawImage(snap,0,0);
+  var alive=[];
+  for(var i=0;i<placeAnims.length;i++){
+    var a=placeAnims[i];
+    var t=Math.min(1,(now-a.start)/a.dur);
+    if(t<1||now-a.start<a.dur+340){alive.push(a)}
+    // 计算动画位置
+    var px,py,scale=1;
+    if(a.kind==='slide'){
+      var et=easeOutCubic(t);
+      px=a.fx+(a.tx-a.fx)*et;
+      py=a.fy+(a.ty-a.fy)*et;
+    }else{
+      var et2=easeOutBack(Math.min(1,t*1.12));
+      px=a.tx;
+      py=a.ty-(1-et2)*34;
+      scale=1.5-0.5*et2;
+      if(t>=1){py=a.ty;scale=1}
+    }
+    // 绘制此动画棋子
+    if(a.piece)drawXQP(px,py,a.piece);
+    else drawBall(px,py,a.r*scale,a.black);
+    // 落地涟漪
+    if(t>=0.9){
+      var rt=(now-a.start-a.dur*0.9)/340;
+      if(rt>=0&&rt<1){
+        cx.save();
+        cx.globalAlpha=(1-rt)*0.5;
+        cx.strokeStyle=(a.black===false)?'rgba(90,140,90,1)':'rgba(170,110,50,1)';
+        cx.lineWidth=2.2*(1-rt)+0.5;
+        cx.beginPath();cx.ellipse(a.tx,a.ty,(a.r||22)*(1+rt*1.7),(a.r||22)*(0.5+rt*0.9),0,0,Math.PI*2);cx.stroke();
+        cx.globalAlpha=(1-rt)*0.28;
+        cx.beginPath();cx.ellipse(a.tx,a.ty,(a.r||22)*(1+rt*1.1),(a.r||22)*(0.38+rt*0.55),0,0,Math.PI*2);cx.stroke();
+        cx.restore();
+      }
+    }
+  }
+  placeAnims=alive;
+  if(placeAnims.length>0){
+    animRAFId=requestAnimationFrame(stepPlaceAnims);
+  }else{
+    animRAFId=null;
+    // 动画全部结束: 完整重绘一次(消除残影,恢复last标记)
+    if(curGame==='gomoku')drawGomoku();
+    else if(curGame==='go')drawGo();
+    else if(curGame==='xq')drawXQ();
+  }
+}
+// 落子动画启动器: 先画不含新子的棋盘快照,再启动动画
+function animGomokuPlace(x,y,black){
+  drawGomoku(x,y);
+  addPlaceAnim({kind:'drop',tx:GP+x*GC,ty:GP+y*GC,r:GR,black:black,snapshot:makeSnapshot()});
+}
+function animGoPlace(x,y,black){
+  drawGo(x,y);
+  addPlaceAnim({kind:'drop',tx:GOP+x*GOC,ty:GOP+y*GOC,r:GOR,black:black,snapshot:makeSnapshot()});
+}
+function animXQMove(fr,fc,tr,tc){
+  var piece=xqB[tr][tc];
+  drawXQ(tr,tc);
+  addPlaceAnim({kind:'slide',fx:XP+fc*XC,fy:XP+fr*XC,tx:XP+tc*XC,ty:XP+tr*XC,piece:piece,snapshot:makeSnapshot()});
+}
+// 将军警示脉冲(王位红环扩散)
+function animCheckPulse(kr,kc){
+  var t0=performance.now();
+  function pulse(){
+    var t=(performance.now()-t0)/700;
+    if(t>=1)return;
+    cx.save();
+    cx.globalAlpha=(1-t)*0.8;
+    cx.strokeStyle='rgba(200,50,50,1)';
+    cx.lineWidth=3*(1-t)+1;
+    cx.beginPath();cx.arc(XP+kc*XC,XP+kr*XC,26+t*22,0,Math.PI*2);cx.stroke();
+    cx.restore();
+    requestAnimationFrame(pulse);
+  }
+  requestAnimationFrame(pulse);
+}
 
 // 画棋子球体 — 增强质感：多层渐变+高光+边缘反射
 function drawBall(px,py,r,black){
@@ -2846,17 +2967,17 @@ function setupEv(){
     if(over)return;
     var p=getXY(e);
     var playerColor=playerFirst?1:2;
-    if(curGame==='gomoku'&&!gAiThink&&gCur===playerColor){
+    if(curGame==='gomoku'&&!gAiThink&&gCur===playerColor&&placeAnims.length===0){
       var x=Math.round((p.mx-GP)/GC),y=Math.round((p.my-GP)/GC);
       if(x!==hx||y!==hy){hx=x;hy=y;
         if(x>=0&&x<GS&&y>=0&&y<GS&&gB[y][x]===0){drawGomoku();cx.save();cx.globalAlpha=.28;drawBall(GP+x*GC,GP+y*GC,GR,true);cx.restore()}
       }
-    }else if(curGame==='go'&&!goOver&&!goAi&&goCur===playerColor){
+    }else if(curGame==='go'&&!goOver&&!goAi&&goCur===playerColor&&placeAnims.length===0){
       var gx=Math.round((p.mx-GOP)/GOC),gy=Math.round((p.my-GOP)/GOC);
       if(gx>=0&&gx<GSZ&&gy>=0&&gy<GSZ&&goB[gx][gy]===0){if(!goH||goH.x!==gx||goH.y!==gy){goH={x:gx,y:gy};drawGo()}}
     }
   });
-  c.addEventListener('mouseleave',function(){hx=-1;hy=-1;if(curGame==='gomoku'&&!over)drawGomoku();if(curGame==='go'){goH=null;drawGo()}});
+  c.addEventListener('mouseleave',function(){hx=-1;hy=-1;if(placeAnims.length>0)return;if(curGame==='gomoku'&&!over)drawGomoku();if(curGame==='go'){goH=null;drawGo()}});
 }
 function handleClick(mx,my){
   if(curGame==='gomoku'){var x=Math.round((mx-GP)/GC),y=Math.round((my-GP)/GC);if(x>=0&&x<GS&&y>=0&&y<GS)gomokuPlay(x,y)}
@@ -3138,7 +3259,7 @@ function gEvalBoard(aiP,huP){
 // PVS搜索 (主变例搜索) + 空着剪枝 + 威胁延伸
 function gAlphaBeta(b,depth,alpha,beta,maxP,aiP,huP,ply){
   gNodes++;
-  var timeLimit=curDiff>=4?20000:curDiff>=3?8000:5000;
+  var timeLimit=curDiff>=4?8000:curDiff>=3?4500:2500;
   if(gAbort||(gNodes&1023)===0&&Date.now()-gStart>timeLimit){gAbort=true;return 0}
   if(ply>=64)return gEvalBoard(aiP,huP);
   // 置换表查询
@@ -3389,7 +3510,7 @@ function gAIMove(){
   var topN=curDiff>=4?28:curDiff>=3?18:12;
   var top=scored.slice(0,Math.min(topN,scored.length));
   var best=top[0],bs=-Infinity;
-  var timeLimit=curDiff>=4?20000:curDiff>=3?8000:5000;
+  var timeLimit=curDiff>=4?8000:curDiff>=3?4500:2500;
   // 迭代加深: 逐步增加深度,利用置换表
   for(var id=2;id<=maxDepth;id+=2){
     var alpha=-Infinity,beta=Infinity;
@@ -3455,12 +3576,12 @@ function initGomoku(){
     updCursor();
     setTimeout(function(){
       var m=gAIMove();
-      if(m){gB[m.y][m.x]=1;gH.push({x:m.x,y:m.y,p:1,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:1};drawGomoku()}
+      if(m){gB[m.y][m.x]=1;gH.push({x:m.x,y:m.y,p:1,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:1};animGomokuPlace(m.x,m.y,true)}
       gCur=2;gAiThink=false;updSt();updCursor();applyPendingDiff();
     },50);
   }
 }
-function drawGomoku(){
+function drawGomoku(skipX,skipY){
   drawPaper(GX,GX);
   // 外框双线
   cx.strokeStyle='rgba(107,82,48,.35)';cx.lineWidth=1.5;cx.strokeRect(GP-10,GP-10,(GS-1)*GC+20,(GS-1)*GC+20);
@@ -3475,12 +3596,18 @@ function drawGomoku(){
   var sp=[[3,3],[3,11],[11,3],[11,11],[7,7]];
   cx.fillStyle='rgba(50,33,12,.8)';
   for(var i=0;i<sp.length;i++){cx.beginPath();cx.arc(GP+sp[i][0]*GC,GP+sp[i][1]*GC,3.5,0,Math.PI*2);cx.fill()}
-  // 棋子
-  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++)if(gB[y][x]!==0)drawBall(GP+x*GC,GP+y*GC,GR,gB[y][x]===1);
-  // 最后一手标记
-  if(gLast){
+  // 棋子(跳过动画中的新子)
+  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
+    if(gB[y][x]===0)continue;
+    if(skipX!==null&&skipX!==undefined&&skipX===x&&skipY===y)continue;
+    drawBall(GP+x*GC,GP+y*GC,GR,gB[y][x]===1);
+  }
+  // 最后一手标记(双环+三角标,醒目)
+  if(gLast&&!(skipX===gLast.x&&skipY===gLast.y)){
+    var lx=GP+gLast.x*GC,ly=GP+gLast.y*GC;
     cx.strokeStyle=gLast.p===1?'rgba(212,168,90,.95)':'rgba(200,120,120,.95)';
-    cx.lineWidth=2;cx.beginPath();cx.arc(GP+gLast.x*GC,GP+gLast.y*GC,GR+4,0,Math.PI*2);cx.stroke();
+    cx.lineWidth=2;cx.beginPath();cx.arc(lx,ly,GR+4,0,Math.PI*2);cx.stroke();
+    cx.lineWidth=.8;cx.globalAlpha=.6;cx.beginPath();cx.arc(lx,ly,GR+7,0,Math.PI*2);cx.stroke();cx.globalAlpha=1;
   }
   // 坐标显示
   if(showCoords){
@@ -3493,13 +3620,13 @@ function gomokuPlay(x,y){
   var playerColor=playerFirst?1:2;
   var aiColor=playerFirst?2:1;
   if(over||gAiThink||gCur!==playerColor||gB[y][x]!==0)return;
-  gB[y][x]=playerColor;gH.push({x:x,y:y,p:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:x,y:y,p:playerColor};drawGomoku();playSound('place');
+  gB[y][x]=playerColor;gH.push({x:x,y:y,p:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:x,y:y,p:playerColor};animGomokuPlace(x,y,playerColor===1);playSound('place');
   if(gCheckWin(gB,x,y,playerColor)){addS('w');showOver('胜','你赢了','win');playSound('win');return}
   gCur=aiColor;updSt();gAiThink=true;updCursor();
   $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
   setTimeout(function(){
     var m=gAIMove();
-    if(m){gB[m.y][m.x]=aiColor;gH.push({x:m.x,y:m.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:aiColor};drawGomoku();playSound('place');
+    if(m){gB[m.y][m.x]=aiColor;gH.push({x:m.x,y:m.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:aiColor};animGomokuPlace(m.x,m.y,aiColor===1);playSound('place');
       if(gCheckWin(gB,m.x,m.y,aiColor)){addS('l');showOver('负','再来一局','lose');playSound('lose');gAiThink=false;updCursor();applyPendingDiff();return}
     }
     gCur=playerColor;gAiThink=false;updSt();updCursor();applyPendingDiff();
@@ -3537,7 +3664,7 @@ function initGo(){
       if(goAbort)return;
       if(m){
         var r2=goTry(goB,m.move[0],m.move[1],1,goKo);
-        if(r2.valid){goB=r2.newBoard;goKo=r2.newKo;goLast={x:m.move[0],y:m.move[1],c:1};goHist.push({x:m.move[0],y:m.move[1],c:1,t:Math.round((Date.now()-gameStartTime)/1000)});drawGo()}
+        if(r2.valid){goB=r2.newBoard;goKo=r2.newKo;goLast={x:m.move[0],y:m.move[1],c:1};goHist.push({x:m.move[0],y:m.move[1],c:1,t:Math.round((Date.now()-gameStartTime)/1000)});animGoPlace(m.move[0],m.move[1],true)}
       }
       goCur=2;$('st').textContent='请落子';
       applyPendingDiff();
@@ -4119,7 +4246,7 @@ function goMCTS(b,c,ko,onMCTSResult){
   }
   setTimeout(runChunk,0);
 }
-function drawGo(){
+function drawGo(skipX,skipY){
   // 棋盘底色：使用缓存的木纹纹理（避免重绘时纹理跳动）
   var tex=makeWoodTexture(GOSZ,GOSZ,54321);
   cx.drawImage(tex,0,0);
@@ -4135,12 +4262,18 @@ function drawGo(){
   var sp=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
   cx.fillStyle='#3a2d1f';
   for(var i=0;i<sp.length;i++){cx.beginPath();cx.arc(GOP+sp[i][0]*GOC,GOP+sp[i][1]*GOC,2.8,0,Math.PI*2);cx.fill()}
-  // 棋子
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++)if(goB[x][y]!==0)drawBall(GOP+x*GOC,GOP+y*GOC,GOR,goB[x][y]===1);
-  // 最后一手标记
-  if(goLast&&goB[goLast.x][goLast.y]===goLast.c){
+  // 棋子(跳过动画中的新子)
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
+    if(goB[x][y]===0)continue;
+    if(skipX!==null&&skipX!==undefined&&skipX===x&&skipY===y)continue;
+    drawBall(GOP+x*GOC,GOP+y*GOC,GOR,goB[x][y]===1);
+  }
+  // 最后一手标记(双环醒目)
+  if(goLast&&goB[goLast.x][goLast.y]===goLast.c&&!(skipX===goLast.x&&skipY===goLast.y)){
+    var llx=GOP+goLast.x*GOC,lly=GOP+goLast.y*GOC;
     cx.strokeStyle=goLast.c===1?'rgba(212,168,90,.95)':'rgba(200,120,120,.95)';
-    cx.lineWidth=2;cx.beginPath();cx.arc(GOP+goLast.x*GOC,GOP+goLast.y*GOC,7,0,Math.PI*2);cx.stroke();
+    cx.lineWidth=2;cx.beginPath();cx.arc(llx,lly,7,0,Math.PI*2);cx.stroke();
+    cx.lineWidth=.8;cx.globalAlpha=.6;cx.beginPath();cx.arc(llx,lly,10.5,0,Math.PI*2);cx.stroke();cx.globalAlpha=1;
   }
   // 鼠标悬停预览
   if(goH&&!goAi&&!goOver&&goB[goH.x][goH.y]===0){cx.save();cx.globalAlpha=.4;drawBall(GOP+goH.x*GOC,GOP+goH.y*GOC,GOR,goCur===1);cx.restore()}
@@ -4156,7 +4289,7 @@ function goPlay(x,y){
   if(!r.valid)return;
   goB=r.newBoard;goKo=r.newKo;goLast={x:x,y:y,c:playerColor};goPass=0;goHist.push({x:x,y:y,c:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});
   if(r.captured.length>0){goCaps[playerFirst?0:1]+=r.captured.length;playSound('capture')}else{playSound('place')}
-  drawGo();
+  animGoPlace(x,y,playerColor===1);
   var aiColor=playerFirst?2:1;
   goCur=aiColor;
   $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
@@ -4173,7 +4306,7 @@ function goPlay(x,y){
     if(r2.valid){
       goB=r2.newBoard;goKo=r2.newKo;goLast={x:m.move[0],y:m.move[1],c:aiColor};goHist.push({x:m.move[0],y:m.move[1],c:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});
       if(r2.captured.length>0){goCaps[playerFirst?1:0]+=r2.captured.length;playSound('capture')}else{playSound('place')}
-      drawGo();
+      animGoPlace(m.move[0],m.move[1],aiColor===1);
     }
     goPass=0;
     goCur=playerColor;$('st').textContent='请落子';
@@ -4508,7 +4641,7 @@ function xqOrderMoves(moves,ttMove,ply){
 function xqQ(b,alpha,beta,red,qply){
   qply=qply||0;
   xqNodes++;
-  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>(curDiff>=4?20000:curDiff>=3?8000:6000)){xqAbort=true;return 0}
+  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>(curDiff>=4?8000:curDiff>=3?4500:2500)){xqAbort=true;return 0}
   if(qply>=8)return xqEval(b)*(red?1:-1);
   var stand=xqEval(b);
   if(!red)stand=-stand;
@@ -4532,7 +4665,7 @@ function xqQ(b,alpha,beta,red,qply){
 // PVS搜索 (主要变例搜索)
 function xqPVS(b,depth,alpha,beta,red,ply){
   xqNodes++;
-  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>(curDiff>=4?20000:curDiff>=3?8000:6000)){xqAbort=true;return 0}
+  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>(curDiff>=4?8000:curDiff>=3?4500:2500)){xqAbort=true;return 0}
   // 置换表查询
   var h=xqH(b,red),tt=xqTT.get(h);
   if(tt&&tt.depth>=depth){
@@ -4739,7 +4872,7 @@ function xqAIMove(){
   showAIInfo(info);
   return best;
 }
-function drawXQ(){
+function drawXQ(skipR,skipC){
   // 棋盘底色：使用缓存的木纹纹理（避免重绘时纹理跳动）
   var tex=makeWoodTexture(XW,XH,98765);
   cx.drawImage(tex,0,0);
@@ -4775,8 +4908,12 @@ function drawXQ(){
     if(marks[i][1]>0){cx.beginPath();cx.moveTo(mx-3,my+3);cx.lineTo(mx-3,my+s+3);cx.moveTo(mx-s-3,my);cx.lineTo(mx-3,my);cx.stroke();cx.moveTo(mx-3,my+3);cx.lineTo(mx-s-3,my+3)}
     if(marks[i][1]<8){cx.beginPath();cx.moveTo(mx+3,my+3);cx.lineTo(mx+s+3,my);cx.moveTo(mx+3,my+3);cx.lineTo(mx+3,my+s+3)}
   }
-  // 棋子
-  for(var r=0;r<10;r++)for(var c=0;c<9;c++)if(xqB[r][c]!==0)drawXQP(XP+c*XC,XP+r*XC,xqB[r][c]);
+  // 棋子(跳过动画中的新子)
+  for(var r=0;r<10;r++)for(var c=0;c<9;c++){
+    if(xqB[r][c]===0)continue;
+    if(skipR!==null&&skipR!==undefined&&skipR===r&&skipC===c)continue;
+    drawXQP(XP+c*XC,XP+r*XC,xqB[r][c]);
+  }
   // 选中棋子高亮
   if(xqSel){
     cx.strokeStyle='rgba(200,140,50,.85)';cx.lineWidth=3;
@@ -4850,9 +4987,10 @@ function xqPlay(r,c){
     if(m){
       m.t=Math.round((Date.now()-gameStartTime)/1000);
       if(m.captured!==0)playSound('capture');else playSound('place');
-      xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0;xqHist.push(m);xqSel=null;xqLegal=[];xqRed=!xqRed;drawXQ();xqUpdM();
+      xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0;xqHist.push(m);xqSel=null;xqLegal=[];xqRed=!xqRed;animXQMove(m.fr,m.fc,m.tr,m.tc);xqUpdM();
       var om=xqLegalMoves(xqB,xqAiRed);if(om.length===0){addS('w');showOver('胜','将死对手','win');playSound('win');return}
       var ck=xqCheck(xqB,xqAiRed)?' 将军':'';
+      if(ck){var ek=xqKing(xqB,xqAiRed);if(ek)animCheckPulse(ek[0],ek[1])}
       $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>'+ck;xqAi=true;
       setTimeout(function(){
         try{
@@ -4860,9 +4998,10 @@ function xqPlay(r,c){
           if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);if(bm.captured!==0)playSound('capture');else playSound('place');xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
         }catch(e){console.error('XQ AI error:',e)}
         xqAi=false;
-        xqRed=!xqAiRed;drawXQ();xqUpdM();
+        xqRed=!xqAiRed;if(bm)animXQMove(bm.fr,bm.fc,bm.tr,bm.tc);else drawXQ();xqUpdM();
         var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');playSound('lose');return}
         var mc=xqCheck(xqB,playerIsRed)?' 你被将军':'';
+        if(mc){var pk=xqKing(xqB,playerIsRed);if(pk)animCheckPulse(pk[0],pk[1])}
         $('st').textContent='你的回合'+mc;
         applyPendingDiff();
       },50);return;
