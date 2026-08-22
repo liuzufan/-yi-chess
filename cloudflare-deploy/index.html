@@ -495,7 +495,7 @@ function resumeReplay(id,e){
   enter(r.game);
   // 中断init触发的AI(若AI先手, init已异步启动; 重放后重新判断)
   xqAbort=true;goAbort=true;gAbort=true;xqAi=false;goAi=false;gAiThink=false;
-  xqSearchGen++;gGen++;
+  xqSearchGen++;gGen++;goSearchGen++;
   var aiColor=playerFirst?2:1;
   if(r.game==='gomoku'){
     for(var i=0;i<r.moves.length;i++){
@@ -2819,7 +2819,7 @@ function enter(g){
 function exit(){
   // 中断所有AI计算
   goAbort=true;gAbort=true;xqAbort=true;goAi=false;gAiThink=false;xqAi=false;
-  xqSearchGen++;gGen++; // 使所有旧异步搜索链失效
+  xqSearchGen++;gGen++;goSearchGen++; // 使所有旧异步搜索链失效
   pendingDiff=null;
   goH=null;
   // 清理回放定时器
@@ -3008,8 +3008,9 @@ function animGoPlace(x,y,black){
 }
 function animXQMove(fr,fc,tr,tc){
   var piece=xqB[tr][tc];
-  drawXQ(tr,tc);
-  addPlaceAnim({kind:'slide',fx:XP+fc*XC,fy:XP+fr*XC,tx:XP+tc*XC,ty:XP+tr*XC,piece:piece,snapshot:makeSnapshot()});
+  var drf=xqDr(fr),dcf=xqDc(fc),drt=xqDr(tr),dct=xqDc(tc);
+  drawXQ(drt,dct); // skip参数为绘制坐标
+  addPlaceAnim({kind:'slide',fx:XP+dcf*XC,fy:XP+drf*XC,tx:XP+dct*XC,ty:XP+drt*XC,piece:piece,snapshot:makeSnapshot()});
 }
 // 将军警示脉冲(王位红环扩散) — 每帧快照恢复,防止红环叠加残留
 function animCheckPulse(kr,kc){
@@ -3025,7 +3026,7 @@ function animCheckPulse(kr,kc){
     cx.globalAlpha=(1-t)*0.8;
     cx.strokeStyle='rgba(200,50,50,1)';
     cx.lineWidth=3*(1-t)+1;
-    cx.beginPath();cx.arc(XP+kc*XC,XP+kr*XC,26+t*22,0,Math.PI*2);cx.stroke();
+    cx.beginPath();cx.arc(XP+xqDc(kc)*XC,XP+xqDr(kr)*XC,26+t*22,0,Math.PI*2);cx.stroke();
     cx.restore();
     requestAnimationFrame(pulse);
   }
@@ -3142,12 +3143,12 @@ function setupEv(){
     if(over)return;
     var p=getXY(e);
     var playerColor=playerFirst?1:2;
-    if(curGame==='gomoku'&&!gAiThink&&gCur===playerColor&&placeAnims.length===0){
+    if(curGame==='gomoku'&&!gAiThink&&(pvpMode||gCur===playerColor)&&placeAnims.length===0){
       var x=Math.round((p.mx-GP)/GC),y=Math.round((p.my-GP)/GC);
       if(x!==hx||y!==hy){hx=x;hy=y;
-        if(x>=0&&x<GS&&y>=0&&y<GS&&gB[y][x]===0){drawGomoku();cx.save();cx.globalAlpha=.28;drawBall(GP+x*GC,GP+y*GC,GR,true);cx.restore()}
+        if(x>=0&&x<GS&&y>=0&&y<GS&&gB[y][x]===0){drawGomoku();cx.save();cx.globalAlpha=.28;drawBall(GP+x*GC,GP+y*GC,GR,gCur===1);cx.restore()}
       }
-    }else if(curGame==='go'&&!goOver&&!goAi&&goCur===playerColor&&placeAnims.length===0){
+    }else if(curGame==='go'&&!goOver&&!goAi&&(pvpMode||goCur===playerColor)&&placeAnims.length===0){
       var gx=Math.round((p.mx-GOP)/GOC),gy=Math.round((p.my-GOP)/GOC);
       if(gx>=0&&gx<GSZ&&gy>=0&&gy<GSZ&&goB[gx][gy]===0){if(!goH||goH.x!==gx||goH.y!==gy){goH={x:gx,y:gy};drawGo()}}
     }
@@ -3157,19 +3158,19 @@ function setupEv(){
 function handleClick(mx,my){
   if(curGame==='gomoku'){var x=Math.round((mx-GP)/GC),y=Math.round((my-GP)/GC);if(x>=0&&x<GS&&y>=0&&y<GS)gomokuPlay(x,y)}
   else if(curGame==='go'){var x=Math.round((mx-GOP)/GOC),y=Math.round((my-GOP)/GOC);if(x>=0&&x<GSZ&&y>=0&&y<GSZ)goPlay(x,y)}
-  else if(curGame==='xq'){var c=Math.round((mx-XP)/XC),r=Math.round((my-XP)/XC);if(r>=0&&r<10&&c>=0&&c<9)xqPlay(r,c)}
+  else if(curGame==='xq'){var c=Math.round((mx-XP)/XC),r=Math.round((my-XP)/XC);if(r>=0&&r<10&&c>=0&&c<9)xqPlay(xqInvR(r),xqInvC(c))}
 }
 // 根据游戏状态更新鼠标光标
 function updCursor(){
   var c=$('bd');if(!c)return;
   var playerColor=playerFirst?1:2;
   if(curGame==='gomoku'){
-    c.style.cursor=(over||gAiThink||gCur!==playerColor)?'default':'crosshair';
+    c.style.cursor=(over||gAiThink||(!pvpMode&&gCur!==playerColor))?'default':'crosshair';
   }else if(curGame==='go'){
-    c.style.cursor=(goOver||goAi||goCur!==playerColor)?'default':'crosshair';
+    c.style.cursor=(goOver||goAi||(!pvpMode&&goCur!==playerColor))?'default':'crosshair';
   }else if(curGame==='xq'){
     var playerIsRed=playerFirst;
-    c.style.cursor=(xqOver||xqAi||(playerIsRed?!xqRed:xqRed))?'default':'crosshair';
+    c.style.cursor=(xqOver||xqAi||(!pvpMode&&(playerIsRed?!xqRed:xqRed)))?'default':'crosshair';
   }
 }
 
@@ -4016,6 +4017,7 @@ var goB,goKo,goLast,goCur,goPass,goOver,goAi,goH,goCaps,goAbort,goHist;
 function initGo(){
   cv=$('bd');cv.width=GOSZ;cv.height=GOSZ;cx=cv.getContext('2d');
   clearAnims();
+  goSearchGen++; // 使旧异步MCTS链失效(重开/换局)
   goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));
   goKo=null;goLast=null;goCur=1;goPass=0;goOver=false;goAi=false;goH=null;goAbort=false;goCaps=[0,0];goHist=[];hideOver();showAIInfo('');
   if(pvpMode){$('p1').textContent='黑方';$('p2').textContent='白方';$('st').textContent='黑方落子'}
@@ -5110,7 +5112,9 @@ function goTPromote(b,c,koPos){
   return null;
 }
 // 增强MCTS + RAVE(AMAF含rollout全程) + 根先验 + 快引擎 + 树复用 + 根级战术层
+var goSearchGen=0; // 搜索代数: 重开/换局后旧异步MCTS链自动失效(修复: 重开后上局AI残步落到新棋盘)
 function goMCTS(b,c,ko,onMCTSResult){
+  var gen=++goSearchGen;
   if(curDiff>=2){
     var joseki=goMatchJoseki(b);
     if(joseki){
@@ -5169,6 +5173,7 @@ function goMCTS(b,c,ko,onMCTSResult){
   var mctsStart=Date.now();
   var PMv=[],PMC=[];
   function runChunk(){
+    if(gen!==goSearchGen)return; // 已被新搜索取代(重开/换局/新一手): 静默终止, 不回调
     if(goAbort){onDone();return}
     var chunkStart=Date.now();
     var s=si,timeUp=false;
@@ -5492,9 +5497,15 @@ function xqInitBoard(){
 var XV=[0,10000,200,200,400,900,450,100,10000,200,200,400,900,450,100];
 var xqB,xqRed,xqSel,xqLegal,xqHist,xqOver,xqAi,xqTT,xqKiller,xqHist2,xqAiRed;
 var xqNodes,xqStart,xqAbort,xqPv;
+var xqBoardFlip=false; // 棋盘翻转: 电脑先手(玩家执黑)时翻转, 玩家棋子恒在下方
+function xqDr(r){return xqBoardFlip?(9-r):r}
+function xqDc(c){return xqBoardFlip?(8-c):c}
+function xqInvR(rd){return xqBoardFlip?(9-rd):rd}
+function xqInvC(cd){return xqBoardFlip?(8-cd):cd}
 
 function initXQ(){
   cv=$('bd');cv.width=XW;cv.height=XH;cx=cv.getContext('2d');
+  xqBoardFlip=(!pvpMode&&!playerFirst); // 电脑先手(玩家执黑)时翻转棋盘
   xqB=xqInitBoard();
   clearAnims();
   xqSearchGen++; // 使旧异步搜索链失效
@@ -5921,7 +5932,7 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn,pathSet){
     if(xqCheck(b,red)){xqUm(b,m,cap);continue}
     legalCnt++;
     var nh=(h^xqZob[m.piece*90+m.fr*9+m.fc]^xqZob[m.piece*90+m.tr*9+m.tc]^(cap!==0?xqZob[cap*90+m.tr*9+m.tc]:0)^xqZobRed)>>>0;
-    if(pathSet)pathSet[nh]=1;
+    if(pathSet)pathSet[h]=1; // 修复: 标记本节点位置(非子节点nh), 否则子节点入口重复检测误判返回0, 致搜索从第2层起全坍塌为0→AI近乎随机走子(飞炮吃马/极易被击败)
     var sc;
     if(legalCnt===1){
       sc=-xqPVS(b,depth-1,-beta,-alpha,!red,ply+1,nh,pathSet);
@@ -5937,7 +5948,7 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn,pathSet){
         sc=-xqPVS(b,depth-1,-beta,-alpha,!red,ply+1,nh,pathSet);
       }
     }
-    if(pathSet)delete pathSet[nh];
+    if(pathSet)delete pathSet[h];
     // unmake: 就地还原
     xqUm(b,m,cap);
     if(xqAbort)return 0;
@@ -6204,29 +6215,31 @@ function drawXQ(skipR,skipC){
   cx.moveTo(XP+3*XC,XP+7*XC);cx.lineTo(XP+5*XC,XP+9*XC);cx.moveTo(XP+5*XC,XP+7*XC);cx.lineTo(XP+3*XC,XP+9*XC);cx.stroke();
   // 楚河汉界
   cx.fillStyle='rgba(60,45,25,.5)';cx.font='600 22px "Noto Serif SC","Songti SC","SimSun","宋体",serif';cx.textAlign='center';cx.textBaseline='middle';
-  cx.fillText('楚  河',XP+2*XC,XP+4.5*XC);cx.fillText('漢  界',XP+6*XC,XP+4.5*XC);
+  cx.fillText('楚  河',XP+xqDc(2)*XC,XP+4.5*XC);cx.fillText('漢  界',XP+xqDc(6)*XC,XP+4.5*XC);
   // 兟炮位置标记（十字定位线）
   cx.strokeStyle='rgba(92,74,50,.4)';cx.lineWidth=.8;
   var marks=[[2,1],[2,7],[3,0],[3,2],[3,4],[3,6],[3,8],[7,1],[7,7],[6,0],[6,2],[6,4],[6,6],[6,8]];
   for(var i=0;i<marks.length;i++){
-    var mx=XP+marks[i][1]*XC,my=XP+marks[i][0]*XC,s=4;
-    if(marks[i][1]>0){cx.beginPath();cx.moveTo(mx-s-3,my);cx.lineTo(mx-3,my);cx.moveTo(mx-3,my-s-3);cx.lineTo(mx-3,my-3);cx.stroke()}
-    if(marks[i][1]<8){cx.beginPath();cx.moveTo(mx+3,my);cx.lineTo(mx+s+3,my);cx.moveTo(mx+3,my-3);cx.lineTo(mx+3,my-s-3);cx.stroke()}
-    if(marks[i][1]>0){cx.beginPath();cx.moveTo(mx-3,my+3);cx.lineTo(mx-3,my+s+3);cx.moveTo(mx-s-3,my);cx.lineTo(mx-3,my);cx.stroke();cx.moveTo(mx-3,my+3);cx.lineTo(mx-s-3,my+3)}
-    if(marks[i][1]<8){cx.beginPath();cx.moveTo(mx+3,my+3);cx.lineTo(mx+s+3,my);cx.moveTo(mx+3,my+3);cx.lineTo(mx+3,my+s+3)}
+    var mc2=xqDc(marks[i][1]),mr2=xqDr(marks[i][0]);
+    var mx=XP+mc2*XC,my=XP+mr2*XC,s=4;
+    if(mc2>0){cx.beginPath();cx.moveTo(mx-s-3,my);cx.lineTo(mx-3,my);cx.moveTo(mx-3,my-s-3);cx.lineTo(mx-3,my-3);cx.stroke()}
+    if(mc2<8){cx.beginPath();cx.moveTo(mx+3,my);cx.lineTo(mx+s+3,my);cx.moveTo(mx+3,my-3);cx.lineTo(mx+3,my-s-3);cx.stroke()}
+    if(mc2>0){cx.beginPath();cx.moveTo(mx-3,my+3);cx.lineTo(mx-3,my+s+3);cx.moveTo(mx-s-3,my);cx.lineTo(mx-3,my);cx.stroke();cx.moveTo(mx-3,my+3);cx.lineTo(mx-s-3,my+3)}
+    if(mc2<8){cx.beginPath();cx.moveTo(mx+3,my+3);cx.lineTo(mx+s+3,my);cx.moveTo(mx+3,my+3);cx.lineTo(mx+3,my+s+3)}
   }
   // 棋子(跳过动画中的新子)
   for(var r=0;r<10;r++)for(var c=0;c<9;c++){
     if(xqB[r][c]===0)continue;
-    if(skipR!==null&&skipR!==undefined&&skipR===r&&skipC===c)continue;
-    drawXQP(XP+c*XC,XP+r*XC,xqB[r][c]);
+    var dr2=xqDr(r),dc2=xqDc(c);
+    if(skipR!==null&&skipR!==undefined&&dr2===skipR&&dc2===skipC)continue;
+    drawXQP(XP+dc2*XC,XP+dr2*XC,xqB[r][c]);
   }
   // 选中棋子高亮
   if(xqSel){
     cx.strokeStyle='rgba(200,140,50,.85)';cx.lineWidth=3;
-    cx.beginPath();cx.arc(XP+xqSel[1]*XC,XP+xqSel[0]*XC,25,0,Math.PI*2);cx.stroke();
+    cx.beginPath();cx.arc(XP+xqDc(xqSel[1])*XC,XP+xqDr(xqSel[0])*XC,25,0,Math.PI*2);cx.stroke();
     for(var i=0;i<xqLegal.length;i++){
-      var m=xqLegal[i],px=XP+m.tc*XC,py=XP+m.tr*XC;
+      var m=xqLegal[i],px=XP+xqDc(m.tc)*XC,py=XP+xqDr(m.tr)*XC;
       if(m.captured!==0){
         cx.strokeStyle='rgba(156,42,42,.55)';cx.lineWidth=3;cx.beginPath();cx.arc(px,py,25,0,Math.PI*2);cx.stroke();
       }else{
@@ -6237,8 +6250,8 @@ function drawXQ(skipR,skipC){
   // 坐标显示
   if(showCoords){
     cx.fillStyle='rgba(107,82,48,.55)';cx.font='9px Georgia,serif';cx.textAlign='center';cx.textBaseline='middle';
-    for(var cc=0;cc<9;cc++)cx.fillText(String.fromCharCode(65+cc),XP+cc*XC,XP-14);
-    for(var rr=0;rr<10;rr++)cx.fillText(String(10-rr),XP-14,XP+rr*XC);
+    for(var cc=0;cc<9;cc++)cx.fillText(String.fromCharCode(65+xqInvC(cc)),XP+cc*XC,XP-14);
+    for(var rr=0;rr<10;rr++)cx.fillText(String(10-xqInvR(rr)),XP-14,XP+rr*XC);
   }
 }
 function drawXQP(px,py,p){
@@ -6343,8 +6356,18 @@ function xqUpdM(){
 }
 
 // 按钮事件
-$('rbtn').onclick=function(){if(curGame==='gomoku')initGomoku();else if(curGame==='go')initGo();else if(curGame==='xq')initXQ()};
-$('obtn').onclick=function(){if(curGame==='gomoku')initGomoku();else if(curGame==='go')initGo();else if(curGame==='xq')initXQ()};
+function restartGame(){
+  // 对齐 enter()/exit(): 中断旧AI链/重置计时/应用暂存难度/清理回放定时器, 防止跨局残留(重开修复)
+  goAbort=true;gAbort=true;xqAbort=true;goAi=false;gAiThink=false;xqAi=false;
+  xqSearchGen++;gGen++;goSearchGen++;
+  gameStartTime=Date.now();applyPendingDiff();
+  if(replayTimer){clearTimeout(replayTimer);replayTimer=null}
+  if(rpSuggestTimer){clearInterval(rpSuggestTimer);rpSuggestTimer=null}
+  clearAnims();
+  if(curGame==='gomoku')initGomoku();else if(curGame==='go')initGo();else if(curGame==='xq')initXQ()
+}
+$('rbtn').onclick=restartGame;
+$('obtn').onclick=restartGame;
 $('ubtn').onclick=function(){
   clearAnims();
   if(curGame==='gomoku'&&!over&&!gAiThink&&gH.length>=2){
