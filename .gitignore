@@ -19,3 +19,23 @@ npm-debug.log
 # Temp
 *.tmp
 *.bak
+
+# Debug/Test scripts (temporary development files)
+_*.js
+_*.txt
+_*.ps1
+test_*.js
+debug_*.js
+bench_*.js
+check_*.js
+chk_*.js
+extract*.js
+find_*.js
+prof*.js
+patch_*.js
+rsim_*.js
+go_new*.js
+go_v2.js
+*.py
+xq_ai_test.py
+__pycache__/
