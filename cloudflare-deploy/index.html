@@ -3009,15 +3009,15 @@ function animGoPlace(x,y,black){
 function animXQMove(fr,fc,tr,tc){
   var piece=xqB[tr][tc];
   drawXQ(tr,tc);
-  addPlaceAnim({kind:'slide',fx:XP+xqDc(fc)*XC,fy:XP+xqDr(fr)*XC,tx:XP+xqDc(tc)*XC,ty:XP+xqDr(tr)*XC,piece:piece,snapshot:makeSnapshot()});
+  addPlaceAnim({kind:'slide',fx:XP+fc*XC,fy:XP+fr*XC,tx:XP+tc*XC,ty:XP+tr*XC,piece:piece,snapshot:makeSnapshot()});
 }
 // 将军警示脉冲(王位红环扩散) — 每帧快照恢复,防止红环叠加残留
 function animCheckPulse(kr,kc){
   var t0=performance.now();
   var snap=makeSnapshot();
   function pulse(){
-    // 有落子动画进行时先让位,动画结束后再播放将军脉冲(避免掉帧/旧快照覆盖新动画)
-    if(placeAnims.length>0){if(performance.now()-t0<2500)requestAnimationFrame(pulse);else drawXQ();return;}
+    // 有落子动画进行时立即让位(避免旧快照覆盖新动画帧)
+    if(placeAnims.length>0)return;
     var t=(performance.now()-t0)/700;
     if(t>=1){drawXQ();return}
     cx.drawImage(snap,0,0);
@@ -3025,7 +3025,7 @@ function animCheckPulse(kr,kc){
     cx.globalAlpha=(1-t)*0.8;
     cx.strokeStyle='rgba(200,50,50,1)';
     cx.lineWidth=3*(1-t)+1;
-    cx.beginPath();cx.arc(XP+xqDc(kc)*XC,XP+xqDr(kr)*XC,26+t*22,0,Math.PI*2);cx.stroke();
+    cx.beginPath();cx.arc(XP+kc*XC,XP+kr*XC,26+t*22,0,Math.PI*2);cx.stroke();
     cx.restore();
     requestAnimationFrame(pulse);
   }
@@ -3072,17 +3072,6 @@ function drawBall(px,py,r,black){
   cx.save();cx.globalAlpha=black?.4:.2;
   cx.strokeStyle=black?'#000':'#a89878';cx.lineWidth=1;
   cx.beginPath();cx.arc(px,py,r-.5,0,Math.PI*2);cx.stroke();
-  cx.restore();
-}
-// 落子预览：半透明、与棋子颜色对应的高亮(修复黑白预览均显示黑色投影、难以区分的配色缺陷)
-function drawPreview(px,py,r,black){
-  cx.save();
-  cx.globalAlpha=0.5;
-  cx.beginPath();cx.arc(px,py,r,0,Math.PI*2);
-  cx.fillStyle=black?'rgba(25,25,25,.55)':'rgba(248,243,230,.62)';
-  cx.fill();
-  cx.lineWidth=2;cx.strokeStyle=black?'rgba(25,25,25,.7)':'rgba(120,108,86,.7)';
-  cx.stroke();
   cx.restore();
 }
 // 木纹纹理缓存（离屏Canvas，避免每次重绘时Math.random导致纹理跳动）
@@ -3156,7 +3145,7 @@ function setupEv(){
     if(curGame==='gomoku'&&!gAiThink&&gCur===playerColor&&placeAnims.length===0){
       var x=Math.round((p.mx-GP)/GC),y=Math.round((p.my-GP)/GC);
       if(x!==hx||y!==hy){hx=x;hy=y;
-        if(x>=0&&x<GS&&y>=0&&y<GS&&gB[y][x]===0){drawGomoku();drawPreview(GP+x*GC,GP+y*GC,GR,gCur===1)}
+        if(x>=0&&x<GS&&y>=0&&y<GS&&gB[y][x]===0){drawGomoku();cx.save();cx.globalAlpha=.28;drawBall(GP+x*GC,GP+y*GC,GR,true);cx.restore()}
       }
     }else if(curGame==='go'&&!goOver&&!goAi&&goCur===playerColor&&placeAnims.length===0){
       var gx=Math.round((p.mx-GOP)/GOC),gy=Math.round((p.my-GOP)/GOC);
@@ -3168,7 +3157,7 @@ function setupEv(){
 function handleClick(mx,my){
   if(curGame==='gomoku'){var x=Math.round((mx-GP)/GC),y=Math.round((my-GP)/GC);if(x>=0&&x<GS&&y>=0&&y<GS)gomokuPlay(x,y)}
   else if(curGame==='go'){var x=Math.round((mx-GOP)/GOC),y=Math.round((my-GOP)/GOC);if(x>=0&&x<GSZ&&y>=0&&y<GSZ)goPlay(x,y)}
-  else if(curGame==='xq'){var cd=Math.round((mx-XP)/XC),rd=Math.round((my-XP)/XC);if(rd>=0&&rd<10&&cd>=0&&cd<9)xqPlay(xqInvR(rd),xqInvC(cd))}
+  else if(curGame==='xq'){var c=Math.round((mx-XP)/XC),r=Math.round((my-XP)/XC);if(r>=0&&r<10&&c>=0&&c<9)xqPlay(r,c)}
 }
 // 根据游戏状态更新鼠标光标
 function updCursor(){
@@ -5384,7 +5373,7 @@ function drawGo(skipX,skipY){
     }
   }
   // 鼠标悬停预览
-  if(goH&&!goAi&&!goOver&&goB[goH.x][goH.y]===0)drawPreview(GOP+goH.x*GOC,GOP+goH.y*GOC,GOR,goCur===1)
+  if(goH&&!goAi&&!goOver&&goB[goH.x][goH.y]===0){cx.save();cx.globalAlpha=.4;drawBall(GOP+goH.x*GOC,GOP+goH.y*GOC,GOR,goCur===1);cx.restore()}
   // 坐标标注
   cx.fillStyle='#6b5d4f';cx.font='bold 9px Georgia,serif';cx.textAlign='center';cx.textBaseline='middle';
   var L='ABCDEFGHJKLMNOPQRST';
@@ -5502,12 +5491,6 @@ function xqInitBoard(){
 }
 var XV=[0,10000,200,200,400,900,450,100,10000,200,200,400,900,450,100];
 var xqB,xqRed,xqSel,xqLegal,xqHist,xqOver,xqAi,xqTT,xqKiller,xqHist2,xqAiRed;
-// 棋盘翻转: 人机对战中玩家执黑(后手)时自动旋转180°,使玩家棋子始终位于屏幕下方
-var xqFlip=false;
-function xqDr(r){return xqFlip?(9-r):r}
-function xqDc(c){return xqFlip?(8-c):c}
-function xqInvR(rd){return xqFlip?(9-rd):rd}
-function xqInvC(cd){return xqFlip?(8-cd):cd}
 var xqNodes,xqStart,xqAbort,xqPv;
 
 function initXQ(){
@@ -5515,7 +5498,7 @@ function initXQ(){
   xqB=xqInitBoard();
   clearAnims();
   xqSearchGen++; // 使旧异步搜索链失效
-  xqFlip=(!pvpMode&&!playerFirst);xqRed=playerFirst;xqAiRed=!playerFirst;xqSel=null;xqLegal=[];xqHist=[];xqOver=false;xqAi=false;xqTT=new Map();xqKiller=[];xqHist2=[];xqNodes=0;xqAbort=false;hideOver();showAIInfo('');
+  xqRed=playerFirst;xqAiRed=!playerFirst;xqSel=null;xqLegal=[];xqHist=[];xqOver=false;xqAi=false;xqTT=new Map();xqKiller=[];xqHist2=[];xqNodes=0;xqAbort=false;hideOver();showAIInfo('');
   if(pvpMode){$('p1').textContent='红方';$('p2').textContent='黑方';$('st').textContent='红方回合';xqRed=true}
   else{$('p1').textContent=playerFirst?'你（红）':'AI（红）';$('p2').textContent=playerFirst?'AI（黑）':'你（黑）';$('st').textContent=playerFirst?'你的回合':'AI回合'}
   $('xm').innerHTML='';
@@ -6111,7 +6094,7 @@ function xqAIMove(cb){
   }
   xqKingSync(xqB); // 回放pathSet不动主棋盘,王位跟踪重置回当前局面
   var best=moves[0],bestScore=-Infinity,doneDepth=0;
-  var maxDepth=curDiff===1?4:curDiff===2?8:curDiff===3?14:22;
+  var maxDepth=curDiff===1?6:curDiff===2?8:curDiff===3?14:22;
   var limit=xqTimeLimit();
   var lastIterCost=0,stability=0,prevBestKey='';
   var d=1;
@@ -6221,12 +6204,12 @@ function drawXQ(skipR,skipC){
   cx.moveTo(XP+3*XC,XP+7*XC);cx.lineTo(XP+5*XC,XP+9*XC);cx.moveTo(XP+5*XC,XP+7*XC);cx.lineTo(XP+3*XC,XP+9*XC);cx.stroke();
   // 楚河汉界
   cx.fillStyle='rgba(60,45,25,.5)';cx.font='600 22px "Noto Serif SC","Songti SC","SimSun","宋体",serif';cx.textAlign='center';cx.textBaseline='middle';
-  cx.fillText('楚  河',XP+(xqFlip?6:2)*XC,XP+4.5*XC);cx.fillText('漢  界',XP+(xqFlip?2:6)*XC,XP+4.5*XC);
+  cx.fillText('楚  河',XP+2*XC,XP+4.5*XC);cx.fillText('漢  界',XP+6*XC,XP+4.5*XC);
   // 兟炮位置标记（十字定位线）
   cx.strokeStyle='rgba(92,74,50,.4)';cx.lineWidth=.8;
   var marks=[[2,1],[2,7],[3,0],[3,2],[3,4],[3,6],[3,8],[7,1],[7,7],[6,0],[6,2],[6,4],[6,6],[6,8]];
   for(var i=0;i<marks.length;i++){
-    var mx=XP+xqDc(marks[i][1])*XC,my=XP+xqDr(marks[i][0])*XC,s=4;
+    var mx=XP+marks[i][1]*XC,my=XP+marks[i][0]*XC,s=4;
     if(marks[i][1]>0){cx.beginPath();cx.moveTo(mx-s-3,my);cx.lineTo(mx-3,my);cx.moveTo(mx-3,my-s-3);cx.lineTo(mx-3,my-3);cx.stroke()}
     if(marks[i][1]<8){cx.beginPath();cx.moveTo(mx+3,my);cx.lineTo(mx+s+3,my);cx.moveTo(mx+3,my-3);cx.lineTo(mx+3,my-s-3);cx.stroke()}
     if(marks[i][1]>0){cx.beginPath();cx.moveTo(mx-3,my+3);cx.lineTo(mx-3,my+s+3);cx.moveTo(mx-s-3,my);cx.lineTo(mx-3,my);cx.stroke();cx.moveTo(mx-3,my+3);cx.lineTo(mx-s-3,my+3)}
@@ -6236,14 +6219,14 @@ function drawXQ(skipR,skipC){
   for(var r=0;r<10;r++)for(var c=0;c<9;c++){
     if(xqB[r][c]===0)continue;
     if(skipR!==null&&skipR!==undefined&&skipR===r&&skipC===c)continue;
-    drawXQP(XP+xqDc(c)*XC,XP+xqDr(r)*XC,xqB[r][c]);
+    drawXQP(XP+c*XC,XP+r*XC,xqB[r][c]);
   }
   // 选中棋子高亮
   if(xqSel){
     cx.strokeStyle='rgba(200,140,50,.85)';cx.lineWidth=3;
-    cx.beginPath();cx.arc(XP+xqDc(xqSel[1])*XC,XP+xqDr(xqSel[0])*XC,25,0,Math.PI*2);cx.stroke();
+    cx.beginPath();cx.arc(XP+xqSel[1]*XC,XP+xqSel[0]*XC,25,0,Math.PI*2);cx.stroke();
     for(var i=0;i<xqLegal.length;i++){
-      var m=xqLegal[i],px=XP+xqDc(m.tc)*XC,py=XP+xqDr(m.tr)*XC;
+      var m=xqLegal[i],px=XP+m.tc*XC,py=XP+m.tr*XC;
       if(m.captured!==0){
         cx.strokeStyle='rgba(156,42,42,.55)';cx.lineWidth=3;cx.beginPath();cx.arc(px,py,25,0,Math.PI*2);cx.stroke();
       }else{
@@ -6254,8 +6237,8 @@ function drawXQ(skipR,skipC){
   // 坐标显示
   if(showCoords){
     cx.fillStyle='rgba(107,82,48,.55)';cx.font='9px Georgia,serif';cx.textAlign='center';cx.textBaseline='middle';
-    for(var cc=0;cc<9;cc++)cx.fillText(String.fromCharCode(65+xqInvC(cc)),XP+cc*XC,XP-14);
-    for(var rr=0;rr<10;rr++)cx.fillText(String(10-xqInvR(rr)),XP-14,XP+rr*XC);
+    for(var cc=0;cc<9;cc++)cx.fillText(String.fromCharCode(65+cc),XP+cc*XC,XP-14);
+    for(var rr=0;rr<10;rr++)cx.fillText(String(10-rr),XP-14,XP+rr*XC);
   }
 }
 function drawXQP(px,py,p){
