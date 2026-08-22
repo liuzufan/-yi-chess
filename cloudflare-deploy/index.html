@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="icon" href="data:,">
 <title>弈 · 棋道</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -191,6 +192,7 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 <div class="turn-sel" id="turnsel">
 <div class="turn-opt active" data-t="1" onclick="setTurn(1)">玩家先手</div>
 <div class="turn-opt" data-t="0" onclick="setTurn(0)">电脑先手</div>
+<div class="turn-opt" data-t="2" onclick="setTurn(2)">双人对战</div>
 </div>
 <div class="bar">
 <div class="it"><span class="si sb"></span><span id="p1">你</span></div>
@@ -223,6 +225,7 @@ button:disabled{opacity:.4;cursor:not-allowed;transform:none}
 // ============================================================
 var cv, cx, curGame = 'gomoku', over = false, curDiff = 2;
 var playerFirst = true; // 玩家先手
+var pvpMode=false; // 双人对战: 同设备两人轮流落子, 无AI参与
 var replayMode = false, replayData = null, replayStep = 0, replayTimer = null;
 var gameStartTime = Date.now(); // 游戏开始时间(用于记录每步耗时)
 var rpSpeed = 1500; // 回放自动播放间隔(ms) - 默认放慢到1.5秒
@@ -348,6 +351,8 @@ function exportBoardImage(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 function setTurn(t){
+  if(t===2){pvpMode=true;var ts2=document.querySelectorAll('.turn-opt');for(var j=0;j<ts2.length;j++)ts2[j].className='turn-opt'+(parseInt(ts2[j].getAttribute('data-t'))===2?' active':'');if(!over&&curGame){var s2=$('st');if(curGame==='gomoku'){s2.textContent='黑方回合';s2.style.color='var(--accent)'}else if(curGame==='go'){s2.textContent='黑方落子';s2.style.color='var(--accent)'}else if(curGame==='xq'){s2.textContent=xqRed?'红方回合':'黑方回合';s2.style.color='var(--accent)'}}return}
+  pvpMode=false;
   playerFirst = t===1;
   var ts=document.querySelectorAll('.turn-opt');
   for(var i=0;i<ts.length;i++)ts[i].className='turn-opt'+(parseInt(ts[i].getAttribute('data-t'))===t?' active':'');
@@ -387,7 +392,7 @@ function saveCurrentGame(){
   var now=new Date();
   var dateStr=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0')+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
   var names={gomoku:'五子棋',go:'围棋',xq:'象棋'};
-  replays.unshift({id:Date.now(),game:gameType,name:names[gameType],date:dateStr,result:result,moves:moves,diff:curDiff,playerFirst:playerFirst});
+  replays.unshift({id:Date.now(),game:gameType,name:names[gameType],date:dateStr,result:result,moves:moves,diff:curDiff,playerFirst:playerFirst,pvpMode:pvpMode});
   if(replays.length>50)replays=replays.slice(0,50); // 最多保存50局
   saveReplays(replays);
   var who=yiCurrentUser?('已保存至棋手「'+yiCurrentUser+'」的档案'):('已保存至本地');
@@ -424,6 +429,7 @@ function openRPModal(){
         '<div class="rp-info"><span style="color:var(--accent);font-weight:600;margin-right:6px">['+gameTag+']</span>'+esc(r.name)+' · '+r.date+' · '+r.moves.length+'手 · 难度'+r.diff+'</div>'+
         '<div style="display:flex;align-items:center;gap:8px">'+
         '<span class="rp-result '+cls+'">'+resultText[r.result]+'</span>'+
+        (r.result==='unfinished'?'<span class="rp-del" onclick="resumeReplay('+r.id+',event)">继续</span>':'')+
         '<span class="rp-del" onclick="renameReplay('+r.id+',event)">重命名</span>'+
         '<span class="rp-del" onclick="delReplay('+r.id+',event)">删除</span>'+
         '</div></div>';
@@ -452,6 +458,97 @@ function renameReplay(id,e){
   r.name=nm;
   saveReplays(replays);
   openRPModal(); // 刷新列表
+}
+// 继续未完成的对局: 恢复棋盘状态+设置, 从暂停处继续下
+function resumeReplay(id,e){
+  e.stopPropagation();
+  var replays=getReplays();
+  var r=replays.find(function(x){return x.id===id});
+  if(!r||r.result!=='unfinished')return;
+  closeRPModal();
+  // 恢复模式与设置
+  pvpMode=!!r.pvpMode;
+  playerFirst=r.playerFirst!==undefined?r.playerFirst:true;
+  if(r.diff)curDiff=r.diff;
+  setTurn(pvpMode?2:(playerFirst?1:0));
+  setDiff(curDiff);
+  gameStartTime=Date.now()-((r.moves[r.moves.length-1]&&r.moves[r.moves.length-1].t)||0)*1000;
+  enter(r.game);
+  // 中断init触发的AI(若AI先手, init已异步启动; 重放后重新判断)
+  xqAbort=true;goAbort=true;gAbort=true;xqAi=false;goAi=false;gAiThink=false;
+  xqSearchGen++;gGen++;
+  var aiColor=playerFirst?2:1;
+  if(r.game==='gomoku'){
+    for(var i=0;i<r.moves.length;i++){
+      var m=r.moves[i];
+      gB[m.y][m.x]=m.p;gH.push({x:m.x,y:m.y,p:m.p,t:m.t||0});
+    }
+    gLast=gH.length>0?{x:gH[gH.length-1].x,y:gH[gH.length-1].y,p:gH[gH.length-1].p}:null;
+    gCur=gH.length%2===0?1:2;gAiThink=false;
+    drawGomoku();updSt();updCursor();
+    if(!pvpMode&&gCur===aiColor){
+      gAiThink=true;
+      $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
+      setTimeout(function(){
+        if(!gAiThink||curGame!=='gomoku'||over)return;
+        gAIMove(function(mv){
+          if(!gAiThink||curGame!=='gomoku'||over)return;
+          if(mv){gB[mv.y][mv.x]=aiColor;gH.push({x:mv.x,y:mv.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:mv.x,y:mv.y,p:aiColor};animGomokuPlace(mv.x,mv.y,aiColor===1);
+              if(gCheckWin(gB,mv.x,mv.y,aiColor)){addS('l');showOver('负','再来一局','lose');playSound('lose');gAiThink=false;updCursor();return}
+            }
+            gCur=3-aiColor;gAiThink=false;updSt();updCursor();applyPendingDiff();
+        });
+      },50);
+    }
+  }else if(r.game==='go'){
+    for(var i=0;i<r.moves.length;i++){
+      var mv=r.moves[i];
+      var rr=goTry(goB,mv.x,mv.y,mv.c,goKo);
+      if(rr.valid){goB=rr.newBoard;goKo=rr.newKo;goLast={x:mv.x,y:mv.y,c:mv.c};goHist.push({x:mv.x,y:mv.y,c:mv.c,t:mv.t||0})}
+      else goHist.push({x:mv.x,y:mv.y,c:mv.c,t:mv.t||0});
+    }
+    goCur=goHist.length%2===0?1:2;goPass=0;goAi=false;
+    $('st').textContent=pvpMode?(goCur===1?'黑方落子':'白方落子'):'请落子';
+    drawGo();
+    if(!pvpMode&&goCur===aiColor){
+      goAi=true;
+      $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
+      goMCTS(goB,aiColor,goKo,function(bm){
+        goAi=false;
+        if(goAbort)return;
+        if(!bm){goPass++;if(goPass>=2){goEnd();return}goCur=playerColor;$('st').textContent='请落子';return}
+        var rr2=goTry(goB,bm.move[0],bm.move[1],aiColor,goKo);
+        if(rr2.valid){goB=rr2.newBoard;goKo=rr2.newKo;goLast={x:bm.move[0],y:bm.move[1],c:aiColor};goHist.push({x:bm.move[0],y:bm.move[1],c:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});animGoPlace(bm.move[0],bm.move[1],aiColor===1)}
+        goPass=0;goCur=playerColor;$('st').textContent='请落子';applyPendingDiff();
+      });
+    }
+  }else if(r.game==='xq'){
+    for(var i=0;i<r.moves.length;i++){
+      var xm=r.moves[i];
+      xqB[xm.tr][xm.tc]=xqB[xm.fr][xm.fc];xqB[xm.fr][xm.fc]=0;xqHist.push(xm);
+    }
+    xqRed=xqHist.length%2===0;xqAi=false;xqSel=null;xqLegal=[];
+    xqUpdM();drawXQ();
+    var playerIsRed=playerFirst;
+    if(pvpMode)$('st').textContent=xqRed?'红方回合':'黑方回合';
+    else $('st').textContent=xqRed?'你的回合':'AI回合';
+    if(!pvpMode&&xqRed!==playerIsRed){
+      $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';xqAi=true;
+      setTimeout(function(){
+        if(!xqAi||curGame!=='xq'||xqOver)return;
+        xqAIMove(function(bm){
+          if(!xqAi||curGame!=='xq'||xqOver)return;
+          if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);if(bm.captured!==0)playSound('capture');else playSound('place');xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+          xqAi=false;
+          xqRed=!xqAiRed;if(bm)animXQMove(bm.fr,bm.fc,bm.tr,bm.tc);else drawXQ();xqUpdM();
+          var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');playSound('lose');return}
+          var mc=xqCheck(xqB,playerIsRed)?' 你被将军':'';
+          $('st').textContent='你的回合'+mc;
+          applyPendingDiff();
+        });
+      },50);
+    }
+  }
 }
 // 格式化秒数为 mm:ss
 function fmtTime(sec){
@@ -2702,6 +2799,7 @@ function enter(g){
 function exit(){
   // 中断所有AI计算
   goAbort=true;gAbort=true;xqAbort=true;goAi=false;gAiThink=false;xqAi=false;
+  xqSearchGen++;gGen++; // 使所有旧异步搜索链失效
   pendingDiff=null;
   goH=null;
   // 清理回放定时器
@@ -2758,7 +2856,7 @@ var lastRKick=0;
 var placeAnims=[];
 var animRAFId=null;
 var animDoneCbs=[];
-// 动画全部结束后再执行fn(用于AI启动,消除固定延迟与动画时长不一致的竞态)
+// 动画回调在所有棋子"落地"后立即执行(不等涟漪播完): 涟漪与异步AI搜索并行渲染,响应更快
 function afterAnims(fn){
   if(placeAnims.length===0){fn();return}
   animDoneCbs.push(fn);
@@ -2777,7 +2875,7 @@ function addPlaceAnim(opts){
     kind:opts.kind||'drop',
     fx:opts.fx,fy:opts.fy,tx:opts.tx,ty:opts.ty,
     r:opts.r,piece:opts.piece,black:opts.black,
-    dur:opts.kind==='slide'?260:300,
+    dur:opts.kind==='slide'?240:220,
     start:performance.now(),
     snapshot:opts.snapshot||null
   });
@@ -2788,11 +2886,12 @@ function stepPlaceAnims(){
   // 恢复背景快照(消除上一帧残影)
   var snap=placeAnims.length>0?placeAnims[0].snapshot:null;
   if(snap)cx.drawImage(snap,0,0);
-  var alive=[];
+  var alive=[],landed=true;
   for(var i=0;i<placeAnims.length;i++){
     var a=placeAnims[i];
     var t=Math.min(1,(now-a.start)/a.dur);
-    if(t<1||now-a.start<a.dur+340){alive.push(a)}
+    if(t<1)landed=false;
+    if(t<1||now-a.start<a.dur+300){alive.push(a)}
     // 计算动画位置
     var px,py,scale=1;
     if(a.kind==='slide'){
@@ -2811,7 +2910,7 @@ function stepPlaceAnims(){
     else drawBall(px,py,a.r*scale,a.black);
     // 落地涟漪
     if(t>=0.9){
-      var rt=(now-a.start-a.dur*0.9)/340;
+      var rt=(now-a.start-a.dur*0.9)/300;
       if(rt>=0&&rt<1){
         cx.save();
         cx.globalAlpha=(1-rt)*0.5;
@@ -2825,6 +2924,13 @@ function stepPlaceAnims(){
     }
   }
   placeAnims=alive;
+  // 所有棋子已落地: 立即执行回调(如AI启动) — 涟漪继续播,异步AI搜索与渲染并行
+  if(landed&&animDoneCbs.length>0){
+    var cbs0=animDoneCbs;animDoneCbs=[];
+    for(var ci0=0;ci0<cbs0.length;ci0++){
+      try{cbs0[ci0]()}catch(e){console.error('anim callback error:',e)}
+    }
+  }
   if(placeAnims.length>0){
     animRAFId=requestAnimationFrame(stepPlaceAnims);
   }else{
@@ -2833,11 +2939,6 @@ function stepPlaceAnims(){
     if(curGame==='gomoku')drawGomoku();
     else if(curGame==='go')drawGo();
     else if(curGame==='xq')drawXQ();
-    // 执行等待动画结束的回调(如AI启动)
-    var cbs=animDoneCbs;animDoneCbs=[];
-    for(var ci=0;ci<cbs.length;ci++){
-      try{cbs[ci]()}catch(e){console.error('anim callback error:',e)}
-    }
   }
 }
 // 清空进行中的动画(重开/切棋/悔棋/回放时调用, 防止旧动画把过期快照画到新棋盘上产生重影)
@@ -3027,7 +3128,7 @@ function updCursor(){
 //  棋型评估: 七大棋型含跳子模式, 26种开局定式
 // ============================================================
 var GS=15,GC=36,GP=28,GR=15,GX=GC*(GS-1)+GP*2;
-var gB,gH,gCur,gAiThink,gLast,gTT,gNodes,gStart,gAbort,gTTSize=200003,gKiller,gHistory;
+var gB,gH,gCur,gAiThink,gLast,gTT,gNodes,gStart,gAbort,gTTSize=200003,gKiller,gHistory,gTimeLimit=5000,gGen=0;
 
 // 棋型评分表
 var PAT_SCORE={
@@ -3059,8 +3160,16 @@ function gLineStr(b,x,y,p,dx,dy){
   return s;
 }
 
-// 检测中心点(位置4)的棋型
+// 检测中心点(位置4)的棋型 — 结果缓存(评估热点,命中率高,提速10倍+)
+var gPatCache={};
 function gPattern(s){
+  var c=gPatCache[s];
+  if(c!==undefined)return c;
+  var r=gPatternRaw(s);
+  gPatCache[s]=r;
+  return r;
+}
+function gPatternRaw(s){
   // s长度9, 中心为s[4]='1'
   // 检查各种棋型
   // 连五
@@ -3122,6 +3231,106 @@ function gPatCount(b,x,y,p){
   return pc;
 }
 
+// ============================================================
+//  行级增量评估 (性能核心): 棋盘评分 = 所有行评分之和
+//  make/unmake 只重算过点的4条线(~8次行评分), 叶子评估O(1)
+//  代替原来的全盘逐子重算, 叶子评估提速10-20倍
+// ============================================================
+var gLines=[],gCellLine=null,gLSc=null,gTot=[0,0],gLScCache={};
+(function(){
+  var i,k,c;
+  for(var y=0;y<GS;y++){c=[];for(var x=0;x<GS;x++)c.push(y*GS+x);gLines.push(c)}
+  for(var x2=0;x2<GS;x2++){c=[];for(var y2=0;y2<GS;y2++)c.push(y2*GS+x2);gLines.push(c)}
+  for(var d=-(GS-5);d<=GS-5;d++){ // 主对角线 x-y=d
+    c=[];
+    for(var x3=Math.max(0,d);x3<Math.min(GS,GS+d);x3++)c.push((x3-d)*GS+x3);
+    gLines.push(c);
+  }
+  for(var kk=4;kk<=2*(GS-1)-4;kk++){ // 反对角线 x+y=k
+    c=[];
+    for(var x4=Math.max(0,kk-GS+1);x4<=Math.min(GS-1,kk);x4++)c.push((kk-x4)*GS+x4);
+    gLines.push(c);
+  }
+  gCellLine=new Array(GS*GS);
+  for(i=0;i<GS*GS;i++)gCellLine[i]=[];
+  for(i=0;i<gLines.length;i++){
+    var cells=gLines[i];
+    for(k=0;k<cells.length;k++)gCellLine[cells[k]].push(i);
+  }
+  gLSc=new Float64Array(gLines.length*2);
+})();
+function gSubCnt(s,sub){
+  var cnt=0,idx=s.indexOf(sub);
+  while(idx>=0){cnt++;idx=s.indexOf(sub,idx+1)}
+  return cnt;
+}
+// 单行评分: 连子段(活/眠)+跳子棋型, 结果缓存
+function gLineScoreStr(s){
+  var c=gLScCache[s];
+  if(c!==undefined)return c;
+  var n=s.length,sc=0,i=0;
+  while(i<n){
+    if(s.charCodeAt(i)!==49){i++;continue}
+    var j=i;
+    while(j<n&&s.charCodeAt(j)===49)j++;
+    var run=j-i;
+    var L=i>0?s[i-1]:'2',R=j<n?s[j]:'2';
+    var LL=i>1?s[i-2]:'2',RR=j<n-1?s[j+1]:'2';
+    if(run>=5)sc+=PAT_SCORE.FIVE;
+    else if(run===4){
+      if(L==='0'&&R==='0')sc+=PAT_SCORE.LIVE_FOUR;
+      else if(L==='0'||R==='0')sc+=PAT_SCORE.RUSH_FOUR;
+    }else if(run===3){
+      if(L==='0'&&R==='0'&&(LL==='0'||RR==='0'))sc+=PAT_SCORE.LIVE_THREE;
+      else if(L==='0'||R==='0')sc+=PAT_SCORE.SLEEP_THREE;
+    }else if(run===2){
+      if(L==='0'&&R==='0'&&(LL==='0'||RR==='0'))sc+=PAT_SCORE.LIVE_TWO;
+      else if(L==='0'||R==='0')sc+=PAT_SCORE.SLEEP_TWO;
+    }else if(L==='0'&&R==='0')sc+=PAT_SCORE.LIVE_ONE;
+    i=j;
+  }
+  sc+=gSubCnt(s,'11011')*PAT_SCORE.RUSH_FOUR;   // 跳冲四
+  sc+=gSubCnt(s,'10111')*PAT_SCORE.RUSH_FOUR;
+  sc+=gSubCnt(s,'11101')*PAT_SCORE.RUSH_FOUR;
+  sc+=gSubCnt(s,'010110')*PAT_SCORE.LIVE_THREE; // 跳活三
+  sc+=gSubCnt(s,'011010')*PAT_SCORE.LIVE_THREE;
+  sc+=gSubCnt(s,'10011')*PAT_SCORE.SLEEP_THREE;
+  sc+=gSubCnt(s,'11001')*PAT_SCORE.SLEEP_THREE;
+  sc+=gSubCnt(s,'10101')*PAT_SCORE.SLEEP_THREE;
+  sc+=gSubCnt(s,'010100')*PAT_SCORE.LIVE_TWO;   // 跳活二
+  sc+=gSubCnt(s,'001010')*PAT_SCORE.LIVE_TWO;
+  sc+=gSubCnt(s,'010010')*PAT_SCORE.LIVE_TWO;
+  gLScCache[s]=sc;
+  return sc;
+}
+function gLineCalc(li,p){
+  var cells=gLines[li],s='';
+  for(var i=0;i<cells.length;i++){
+    var k=cells[i],v=gB[(k/GS)|0][k%GS];
+    s+=(v===0?'0':(v===p?'1':'2'));
+  }
+  return gLineScoreStr(s);
+}
+function gUpdCell(x,y){
+  var lis=gCellLine[y*GS+x];
+  for(var i=0;i<lis.length;i++){
+    var li=lis[i];
+    gTot[0]-=gLSc[li*2];gTot[1]-=gLSc[li*2+1];
+    var a=gLineCalc(li,1),b=gLineCalc(li,2);
+    gLSc[li*2]=a;gLSc[li*2+1]=b;
+    gTot[0]+=a;gTot[1]+=b;
+  }
+}
+function gMake(x,y,p){gB[y][x]=p;gUpdCell(x,y)}
+function gUnmake(x,y){gB[y][x]=0;gUpdCell(x,y)}
+function gTotSync(){
+  gTot[0]=0;gTot[1]=0;
+  for(var li=0;li<gLines.length;li++){
+    var a=gLineCalc(li,1),b=gLineCalc(li,2);
+    gLSc[li*2]=a;gLSc[li*2+1]=b;gTot[0]+=a;gTot[1]+=b;
+  }
+}
+
 // 候选位置生成 (Uint8Array标记代替Set,快3-5倍)
 function gCands(b,range){
   range=range||2;
@@ -3158,6 +3367,7 @@ function gCheckWin(b,x,y,p){
 // Zobrist哈希
 var gZob=new Array(GS*GS*2);
 for(var i=0;i<gZob.length;i++)gZob[i]=Math.random()*0xFFFFFFFF;
+var gZobNull=Math.random()*0xFFFFFFFF; // 空着标记位: 防置换表污染(空着翻转行棋方但棋盘不变)
 function gHash(b){
   var h=0;
   for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
@@ -3167,140 +3377,168 @@ function gHash(b){
   return h>>>0;
 }
 
-// VCF搜索 (连续冲四搜索)
-function gVCF(b,attacker,depth,koHash){
-  if(depth<=0||gAbort)return null;
-  var cs=gCands(b,1);
-  // 按威胁值排序
-  cs.sort(function(a,c){return gEvalPt(b,c.x,c.y,attacker)-gEvalPt(b,a.x,a.y,attacker)});
+// 找出一方当前所有"落子即成五"的点
+function gFivePts(b,p){
+  var pts=[],cs=gCands(b,1);
   for(var i=0;i<cs.length;i++){
     var x=cs[i].x,y=cs[i].y;
-    var pc=gPatCount(b,x,y,attacker);
-    // 只考虑能形成冲四或以上的着法
-    if(pc.RUSH_FOUR===0&&pc.LIVE_FOUR===0&&pc.FIVE===0)continue;
-    b[y][x]=attacker;
-    if(gCheckWin(b,x,y,attacker)){b[y][x]=0;return{x:x,y:y}}
-    // 对手防守: 必须阻止冲四
-    var opp=3-attacker;
-    var defMove=gFindDefend(b,attacker);
-    if(!defMove){
-      // 对手无法防守冲四/活四，攻击方直接获胜
-      b[y][x]=0;return{x:x,y:y}
-    }
-    b[defMove.y][defMove.x]=opp;
-    if(!gCheckWin(b,defMove.x,defMove.y,opp)){
-      var r=gVCF(b,attacker,depth-1);
-      if(r){b[defMove.y][defMove.x]=0;b[y][x]=0;return{x:x,y:y}}
-    }
-    b[defMove.y][defMove.x]=0;
+    b[y][x]=p;
+    if(gCheckWin(b,x,y,p))pts.push({x:x,y:y});
     b[y][x]=0;
-    if(gAbort)break;
   }
-  return null;
+  return pts;
 }
-
-// 找到防守冲四/活四的唯一点
-function gFindDefend(b,attacker){
+// VCF连续冲四杀 (严格正确版):
+// 攻方只走冲四/活四; 守方唯一有效防守=堵成五点(反四无效:攻方下一手直接连五)
+// 守方若有立即成五点→攻方冲四作废; 活四(双成五点)不可挡=必胜
+// 旧版把"攻方还能再造新四"当作不可防守→大量误报必胜→AI幻觉杀棋走败着,已修复
+var gVNodes=0;
+function gVCF(b,attacker,depth){
+  if(gAbort)return null;
   var opp=3-attacker;
   var cs=gCands(b,1);
+  // 1. 立即成五
   for(var i=0;i<cs.length;i++){
     var x=cs[i].x,y=cs[i].y;
-    if(b[y][x]!==0)continue;
-    b[y][x]=opp;
-    // 检查攻击方是否还有冲四或连五
-    var stillThreat=false;
-    var acs=gCands(b,1);
-    for(var j=0;j<acs.length;j++){
-      if(b[acs[j].y][acs[j].x]!==0)continue;
-      var pc=gPatCount(b,acs[j].x,acs[j].y,attacker);
-      if(pc.FIVE>0||pc.LIVE_FOUR>0||pc.RUSH_FOUR>0){stillThreat=true;break}
-    }
-    b[y][x]=0;
-    if(!stillThreat)return{x:x,y:y};
-  }
-  return null;
-}
-
-// VCT搜索 (连续威胁搜索: 冲四+活三)
-function gVCT(b,attacker,depth){
-  if(depth<=0||gAbort)return null;
-  var cs=gCands(b,1);
-  cs.sort(function(a,c){return gEvalPt(b,c.x,c.y,attacker)-gEvalPt(b,a.x,a.y,attacker)});
-  for(var i=0;i<cs.length;i++){
-    var x=cs[i].x,y=cs[i].y;
-    var pc=gPatCount(b,x,y,attacker);
-    // 只考虑能形成活三或以上的着法
-    if(pc.LIVE_THREE===0&&pc.RUSH_FOUR===0&&pc.LIVE_FOUR===0&&pc.FIVE===0)continue;
     b[y][x]=attacker;
-    if(gCheckWin(b,x,y,attacker)){b[y][x]=0;return{x:x,y:y}}
-    // 检查是否形成必胜局面(双活三/活三+冲四/活四)
-    var apc=gPatCount(b,x,y,attacker);
-    if(apc.LIVE_FOUR>0||apc.RUSH_FOUR>=2||(apc.RUSH_FOUR>0&&apc.LIVE_THREE>0)||apc.LIVE_THREE>=2){
-      // 对手必须防守, 找防守点
-      var opp=3-attacker;
-      var defs=gDefendMoves(b,attacker);
-      if(defs.length===0){b[y][x]=0;return{x:x,y:y}}
-      var allWin=true;
-      for(var j=0;j<defs.length;j++){
-        b[defs[j].y][defs[j].x]=opp;
-        if(gCheckWin(b,defs[j].x,defs[j].y,opp)){b[defs[j].y][defs[j].x]=0;allWin=false;break}
-        var r=gVCT(b,attacker,depth-1);
-        b[defs[j].y][defs[j].x]=0;
-        if(!r){allWin=false;break}
+    var w=gCheckWin(b,x,y,attacker);
+    b[y][x]=0;
+    if(w)return{x:x,y:y};
+  }
+  if(depth<=0)return null;
+  if((++gVNodes&255)===0&&Date.now()-gStart>gTimeLimit){gAbort=true;return null}
+  // 2. 所有冲四/活四着法(含跳冲四)
+  var fours=[];
+  for(i=0;i<cs.length;i++){
+    var pc=gPatCount(b,cs[i].x,cs[i].y,attacker);
+    if(pc.LIVE_FOUR>0||pc.RUSH_FOUR>0)fours.push(cs[i]);
+  }
+  if(fours.length===0)return null;
+  fours.sort(function(a,c){return gEvalPt(b,c.x,c.y,attacker)-gEvalPt(b,a.x,a.y,attacker)});
+  for(i=0;i<fours.length;i++){
+    var m=fours[i];
+    b[m.y][m.x]=attacker;
+    // 守方还能立即成五? → 此冲四作废
+    var ofs=gFivePts(b,opp);
+    if(ofs.length===0){
+      var mf=gFivePts(b,attacker);
+      if(mf.length>=2){b[m.y][m.x]=0;return m} // 活四必胜
+      if(mf.length===1){
+        var d=mf[0]; // 冲四唯一防点
+        b[d.y][d.x]=opp;
+        var r=gVCF(b,attacker,depth-1);
+        b[d.y][d.x]=0;
+        b[m.y][m.x]=0;
+        if(r)return m;
+      }else{
+        b[m.y][m.x]=0;
+        continue;
       }
-      if(allWin){b[y][x]=0;return{x:x,y:y}}
+    }else{
+      b[m.y][m.x]=0;
     }
-    b[y][x]=0;
-    if(gAbort)break;
+    if(gAbort)return null;
   }
   return null;
 }
-
-// 找到所有防守点(针对活三/冲四威胁)
-function gDefendMoves(b,attacker){
+// VCT连续威胁杀 (冲四+活三): 攻方取最强若干威胁着法, 守方防点完整枚举
+// 守方防点 = 攻方所有成五/成四点(堵) ∪ 守方所有成五/成四点(反四反击)
+function gVCT(b,attacker,depth){
+  if(gAbort)return null;
   var opp=3-attacker;
   var cs=gCands(b,1);
-  var defs=[];
+  // 1. 立即成五
   for(var i=0;i<cs.length;i++){
     var x=cs[i].x,y=cs[i].y;
-    if(b[y][x]!==0)continue;
-    // 对手在此点落子后, 检查是否消除所有威胁
-    b[y][x]=opp;
-    var stillThreat=false;
-    var acs=gCands(b,1);
-    for(var j=0;j<acs.length;j++){
-      if(b[acs[j].y][acs[j].x]!==0)continue;
-      var pc=gPatCount(b,acs[j].x,acs[j].y,attacker);
-      if(pc.FIVE>0||pc.LIVE_FOUR>0||pc.RUSH_FOUR>0||pc.LIVE_THREE>0){stillThreat=true;break}
-    }
+    b[y][x]=attacker;
+    var w=gCheckWin(b,x,y,attacker);
     b[y][x]=0;
-    if(!stillThreat)defs.push({x:x,y:y});
+    if(w)return{x:x,y:y};
+  }
+  if(depth<=0)return null;
+  if((++gVNodes&255)===0&&Date.now()-gStart>gTimeLimit){gAbort=true;return null}
+  // 2. 威胁着法: 冲四/活四/活三
+  var tms=[];
+  for(i=0;i<cs.length;i++){
+    var pc=gPatCount(b,cs[i].x,cs[i].y,attacker);
+    if(pc.LIVE_FOUR>0||pc.RUSH_FOUR>0||pc.LIVE_THREE>0)tms.push(cs[i]);
+  }
+  if(tms.length===0)return null;
+  tms.sort(function(a,c){return gEvalPt(b,c.x,c.y,attacker)-gEvalPt(b,a.x,a.y,attacker)});
+  var tmN=depth>=8?16:10;
+  if(tms.length>tmN)tms.length=tmN;
+  for(i=0;i<tms.length;i++){
+    var m=tms[i];
+    b[m.y][m.x]=attacker;
+    var ofs=gFivePts(b,opp);
+    if(ofs.length===0){
+      var mf=gFivePts(b,attacker);
+      if(mf.length>=2){b[m.y][m.x]=0;return m}
+      if(mf.length===1){
+        var d=mf[0]; // 冲四: 守方唯一防点
+        b[d.y][d.x]=opp;
+        var r=gVCT(b,attacker,depth-1);
+        b[d.y][d.x]=0;b[m.y][m.x]=0;
+        if(r)return m;
+      }else{
+        // 活三等: 守方防点完整枚举, 全部失败才是真必胜
+        var defs=gVCTDefs(b,attacker);
+        if(defs.length>0){
+          var allWin=true;
+          for(var j=0;j<defs.length;j++){
+            var dd=defs[j];
+            b[dd.y][dd.x]=opp;
+            if(gCheckWin(b,dd.x,dd.y,opp)){b[dd.y][dd.x]=0;allWin=false;break}
+            var r2=gVCT(b,attacker,depth-1);
+            b[dd.y][dd.x]=0;
+            if(!r2){allWin=false;break}
+            if(gAbort)break;
+          }
+          b[m.y][m.x]=0;
+          if(gAbort)return null;
+          if(allWin)return m;
+        }else{
+          b[m.y][m.x]=0;
+        }
+      }
+    }else{
+      b[m.y][m.x]=0;
+    }
+    if(gAbort)return null;
+  }
+  return null;
+}
+// VCT防守点集合: 攻方成五/成四点(堵) + 守方成五/成四点(反四)
+function gVCTDefs(b,attacker){
+  var opp=3-attacker,defs=[],seen=new Uint8Array(GS*GS);
+  var cs=gCands(b,1);
+  for(var i=0;i<cs.length;i++){
+    var x=cs[i].x,y=cs[i].y,k=y*GS+x;
+    if(seen[k])continue;
+    var pc=gPatCount(b,x,y,attacker);
+    if(pc.FIVE>0||pc.LIVE_FOUR>0||pc.RUSH_FOUR>0){seen[k]=1;defs.push({x:x,y:y});continue}
+    var dc=gPatCount(b,x,y,opp);
+    if(dc.FIVE>0||dc.LIVE_FOUR>0||dc.RUSH_FOUR>0){seen[k]=1;defs.push({x:x,y:y})}
   }
   return defs;
 }
 
-// 棋盘全局评估 - 防守权重提升
+// 棋盘全局评估 - O(1)增量版: 直接读行级评分总计(gTot由gMake/gUnmake在搜索中维护)
+// 代替旧版全盘逐子重算(O(225)*4方向), 叶子评估提速10-20倍
 function gEvalBoard(aiP,huP){
-  var ai=0,hu=0;
-  for(var y=0;y<GS;y++)for(var x=0;x<GS;x++){
-    if(gB[y][x]===aiP)ai+=gEvalPt(gB,x,y,aiP);
-    else if(gB[y][x]===huP)hu+=gEvalPt(gB,x,y,huP);
-  }
-  // 大师难度时防守权重更高 (更谨慎)
   var hw=curDiff>=4?1.2:1.08;
-  return ai-hu*hw;
+  return gTot[aiP-1]-gTot[huP-1]*hw;
 }
 
 // PVS搜索 (主变例搜索) + 空着剪枝 + 威胁延伸 (增量Zobrist哈希)
 function gAlphaBeta(b,depth,alpha,beta,maxP,aiP,huP,ply,hIn){
   gNodes++;
-  var timeLimit=curDiff>=4?8000:curDiff>=3?4500:2500;
-  if(gAbort||(gNodes&1023)===0&&Date.now()-gStart>timeLimit){gAbort=true;return 0}
+  if(gAbort||(gNodes&1023)===0&&Date.now()-gStart>gTimeLimit){gAbort=true;return 0}
   if(ply>=64)return gEvalBoard(aiP,huP);
   // 置换表查询 (哈希由父节点增量传入,省去每节点O(225)全盘重算)
   var h=(hIn===undefined||hIn===null)?gHash(b):(hIn>>>0);
   var tt=gTT[h%gTTSize];
-  if(tt&&tt.h===h&&tt.depth>=depth){
+  if(tt&&tt.h===h&&tt.mp===maxP&&tt.depth>=depth){
     if(tt.flag===0)return tt.score;
     if(tt.flag===1&&tt.score>=beta)return tt.score;
     if(tt.flag===2&&tt.score<=alpha)return tt.score;
@@ -3308,18 +3546,13 @@ function gAlphaBeta(b,depth,alpha,beta,maxP,aiP,huP,ply,hIn){
   if(depth===0)return gEvalBoard(aiP,huP);
   var cs=gCands(b,1);
   if(cs.length===0)return gEvalBoard(aiP,huP);
-  // 威胁检测: 如果当前局面有活四/冲四威胁，增加搜索深度
-  var threatExt=0;
-  if(curDiff>=4&&depth>=2){
-    for(var ti=0;ti<cs.length&&ti<6;ti++){
-      var tpc=gPatCount(b,cs[ti].x,cs[ti].y,maxP?aiP:huP);
-      if(tpc.LIVE_FOUR>0||tpc.RUSH_FOUR>0||tpc.FIVE>0){threatExt=1;break}
-    }
-  }
-  var extDepth=depth+threatExt;
-  // 空着剪枝 (depth>=3, 大师难度)
-  if(curDiff>=4&&extDepth>=3&&!threatExt){
-    var nullSc=-gAlphaBeta(b,extDepth-3,-beta,-beta+1,!maxP,aiP,huP,ply+1,h);
+  // 威胁延伸已移除: 原实现 threatExt=1 时递归深度传 extDepth-1=depth 深度不减,
+  // 中局每层均有威胁→搜索深度永不下降→搜索爆炸(30s无法返回)。强制威胁由VCF/VCT专门处理。
+  var extDepth=depth;
+  // 空着剪枝 (depth>=3, 大师难度, 有限beta才启用: ±Infinity窗口下-beta+1=非法窗口导致Infinity污染) 
+  // 空着节点哈希异或gZobNull: 棋盘相同但轮次翻转,必须区分,否则置换表污染→乱下
+  if(curDiff>=4&&depth>=3&&beta<5000000&&beta>-5000000){
+    var nullSc=-gAlphaBeta(b,depth-3,-beta,-beta+1,!maxP,aiP,huP,ply+1,(h^gZobNull)>>>0);
     if(gAbort)return 0;
     if(nullSc>=beta)return beta;
   }
@@ -3343,10 +3576,10 @@ function gAlphaBeta(b,depth,alpha,beta,maxP,aiP,huP,ply,hIn){
     var x=top[i].x,y=top[i].y;
     if(b[y][x]!==0)continue;
     var p=maxP?aiP:huP;
-    b[y][x]=p;
+    gMake(x,y,p);
     var nh=h^gZob[(y*GS+x)*2+(p-1)];
     if(gCheckWin(b,x,y,p)){
-      b[y][x]=0;
+      gUnmake(x,y);
       var ws=maxP?900000+extDepth*100:-900000-extDepth*100;
       if(ws>=beta)return ws;
       if(ws>alpha){alpha=ws;bm={x:x,y:y};first=false}
@@ -3367,18 +3600,18 @@ function gAlphaBeta(b,depth,alpha,beta,maxP,aiP,huP,ply,hIn){
         sc=-gAlphaBeta(b,extDepth-1,-beta,-alpha,!maxP,aiP,huP,ply+1,nh);
       }
     }
-    b[y][x]=0;
+    gUnmake(x,y);
     if(gAbort)return 0;
     if(sc>=beta){
       if(!maxP){gKiller[ply]={x:x,y:y}}
       gHistory[y*GS+x]=(gHistory[y*GS+x]||0)+extDepth*extDepth;
-      gTT[h%gTTSize]={h:h,depth:extDepth,score:sc,flag:1,bm:{x:x,y:y}};
+      gTT[h%gTTSize]={h:h,mp:maxP,depth:extDepth,score:sc,flag:1,bm:{x:x,y:y}};
       return sc;
     }
     if(sc>alpha){alpha=sc;bm={x:x,y:y};first=false}
   }
   var flag=first?2:0;
-  gTT[h%gTTSize]={h:h,depth:extDepth,score:alpha,flag:flag,bm:bm};
+  gTT[h%gTTSize]={h:h,mp:maxP,depth:extDepth,score:alpha,flag:flag,bm:bm};
   return alpha;
 }
 
@@ -3451,16 +3684,30 @@ function gStrategy(b,p){
   return'balance';
 }
 
-function gAIMove(){
+// UI让行(MessageChannel零延迟宏任务,避开setTimeout嵌套4ms钳制): 深层搜索分块执行不冻结界面
+var gYieldQ=[],gYieldChan=null;
+function gYield(fn){
+  gYieldQ.push(fn);
+  if(!gYieldChan){
+    gYieldChan=new MessageChannel();
+    gYieldChan.port1.onmessage=function(){var f=gYieldQ.shift();if(f)f()};
+  }
+  gYieldChan.port2.postMessage(1);
+}
+
+function gAIMove(cb){
   var aiP=playerFirst?2:1,huP=playerFirst?1:2;
-  gNodes=0;gStart=Date.now();gAbort=false;
+  gNodes=0;gVNodes=0;gStart=Date.now();gAbort=false;
+  var budget=curDiff>=4?5000:curDiff>=3?3000:curDiff>=2?2000:1200;
+  gTimeLimit=Math.min(1000,budget*0.4); // VCF/VCT阶段预算(修复: 旧版gTimeLimit从未赋值,VCF永不限时)
   gTTSize=curDiff>=4?200003:100003;
   gTT=new Array(gTTSize);
   gKiller=new Array(24);
   gHistory=new Array(GS*GS).fill(0);
+  gTotSync(); // 行级增量评估初始化(搜索全程由gMake/gUnmake维护gTot)
+  var gen=++gGen; // 搜索代数: 重开/换局后旧异步链自动失效
   
   var cs=gCands(gB,2);
-  var info='';
   
   // 开局阶段: 使用定式
   var stoneCount=0;
@@ -3469,7 +3716,7 @@ function gAIMove(){
   if(stoneCount===0){
     // AI先手, 下天元
     showAIInfo('<span class="tag">开局</span> 天元');
-    return{x:7,y:7};
+    cb({x:7,y:7});return;
   }
   if(stoneCount===1){
     // 对方已下天元, AI应手用定式
@@ -3480,37 +3727,37 @@ function gAIMove(){
     var wx=ox+op.w2[0],wy=oy+op.w2[1];
     if(wx>=0&&wx<GS&&wy>=0&&wy<GS&&gB[wy][wx]===0){
       showAIInfo('<span class="tag">开局定式</span> '+op.name);
-      return{x:wx,y:wy};
+      cb({x:wx,y:wy});return;
     }
   }
   
   // 1. 必胜: 连五
   for(var i=0;i<cs.length;i++){
     gB[cs[i].y][cs[i].x]=aiP;
-    if(gCheckWin(gB,cs[i].x,cs[i].y,aiP)){gB[cs[i].y][cs[i].x]=0;showAIInfo('<span class="tag">连五</span> 致胜一手');return cs[i]}
+    if(gCheckWin(gB,cs[i].x,cs[i].y,aiP)){gB[cs[i].y][cs[i].x]=0;showAIInfo('<span class="tag">连五</span> 致胜一手');cb(cs[i]);return}
     gB[cs[i].y][cs[i].x]=0;
   }
   // 2. 必防: 阻止对方连五
   for(var i=0;i<cs.length;i++){
     gB[cs[i].y][cs[i].x]=huP;
-    if(gCheckWin(gB,cs[i].x,cs[i].y,huP)){gB[cs[i].y][cs[i].x]=0;showAIInfo('<span class="tag">防守</span> 阻止连五');return cs[i]}
+    if(gCheckWin(gB,cs[i].x,cs[i].y,huP)){gB[cs[i].y][cs[i].x]=0;showAIInfo('<span class="tag">防守</span> 阻止连五');cb(cs[i]);return}
     gB[cs[i].y][cs[i].x]=0;
   }
   // 3. 活四进攻
   for(var i=0;i<cs.length;i++){
     var pc=gPatCount(gB,cs[i].x,cs[i].y,aiP);
-    if(pc.LIVE_FOUR>0){showAIInfo('<span class="tag">进攻</span> 活四');return cs[i]}
+    if(pc.LIVE_FOUR>0){showAIInfo('<span class="tag">进攻</span> 活四');cb(cs[i]);return}
   }
   // 4. 防守对方活四
   for(var i=0;i<cs.length;i++){
     var pc=gPatCount(gB,cs[i].x,cs[i].y,huP);
-    if(pc.LIVE_FOUR>0){showAIInfo('<span class="tag">防守</span> 阻活四');return cs[i]}
+    if(pc.LIVE_FOUR>0){showAIInfo('<span class="tag">防守</span> 阻活四');cb(cs[i]);return}
   }
   // 5. VCF搜索 (难度2+)
   if(curDiff>=2){
     var vcfDepth=curDiff>=4?32:curDiff===3?18:10;
     var vcf=gVCF(gB,aiP,vcfDepth);
-    if(vcf){showAIInfo('<span class="tag">VCF</span> 连续冲四杀 (深度'+vcfDepth+')');return vcf}
+    if(vcf){showAIInfo('<span class="tag">VCF</span> 连续冲四杀 (深度'+vcfDepth+')');cb(vcf);return}
     // 防守对方VCF
     var dvcf=gVCF(gB,huP,vcfDepth-4);
     if(dvcf){
@@ -3518,30 +3765,31 @@ function gAIMove(){
       var hasOff=false;
       for(var i=0;i<cs.length;i++){
         var apc=gPatCount(gB,cs[i].x,cs[i].y,aiP);
-        if(apc.LIVE_FOUR>0){hasOff=true;showAIInfo('<span class="tag">反击</span> 活四反击');return cs[i]}
+        if(apc.LIVE_FOUR>0){hasOff=true;showAIInfo('<span class="tag">反击</span> 活四反击');cb(cs[i]);return}
       }
-      if(!hasOff){showAIInfo('<span class="tag">防守</span> 阻VCF');return dvcf}
+      if(!hasOff){showAIInfo('<span class="tag">防守</span> 阻VCF');cb(dvcf);return}
     }
   }
   // 6. VCT搜索 (难度3+)
   if(curDiff>=3){
     var vctDepth=curDiff>=4?22:8;
     var vct=gVCT(gB,aiP,vctDepth);
-    if(vct){showAIInfo('<span class="tag">VCT</span> 连续威胁杀');return vct}
+    if(vct){showAIInfo('<span class="tag">VCT</span> 连续威胁杀');cb(vct);return}
     var dvct=gVCT(gB,huP,curDiff>=4?12:8);
-    if(dvct){showAIInfo('<span class="tag">防守</span> 阻VCT');return dvct}
+    if(dvct){showAIInfo('<span class="tag">防守</span> 阻VCT');cb(dvct);return}
   }
-  // 7. 双活三进攻
-  for(var i=0;i<cs.length;i++){
-    var pc=gPatCount(gB,cs[i].x,cs[i].y,aiP);
-    if(pc.LIVE_THREE>=2){showAIInfo('<span class="tag">进攻</span> 双活三');return cs[i]}
+  // 7/8. 双活三捷径 (仅低难度; 高难度交给全搜索判断更精准)
+  if(curDiff<=2){
+    for(var i=0;i<cs.length;i++){
+      var pc=gPatCount(gB,cs[i].x,cs[i].y,aiP);
+      if(pc.LIVE_THREE>=2){showAIInfo('<span class="tag">进攻</span> 双活三');cb(cs[i]);return}
+    }
+    for(var i=0;i<cs.length;i++){
+      var pc=gPatCount(gB,cs[i].x,cs[i].y,huP);
+      if(pc.LIVE_THREE>=2){showAIInfo('<span class="tag">防守</span> 阻双活三');cb(cs[i]);return}
+    }
   }
-  // 8. 防守对方双活三
-  for(var i=0;i<cs.length;i++){
-    var pc=gPatCount(gB,cs[i].x,cs[i].y,huP);
-    if(pc.LIVE_THREE>=2){showAIInfo('<span class="tag">防守</span> 阻双活三');return cs[i]}
-  }
-  // 9. 迭代加深PVS搜索 (根节点也用PVS+ aspiration window)
+  // 9. 迭代加深PVS搜索 — 异步分块执行(每个根着法搜索后按需让行UI, 界面零冻结)
   var maxDepth=curDiff===1?6:curDiff===2?8:curDiff===3?10:18;
   var scored=cs.map(function(c){
     return{x:c.x,y:c.y,s:gEvalPt(gB,c.x,c.y,aiP)*1.5+gEvalPt(gB,c.x,c.y,huP)*1.2}
@@ -3550,87 +3798,84 @@ function gAIMove(){
   var topN=curDiff>=4?28:curDiff>=3?18:12;
   var top=scored.slice(0,Math.min(topN,scored.length));
   var best=top[0],bs=-Infinity;
-  var timeLimit=curDiff>=4?8000:curDiff>=3?4500:2500;
-  var rh=gHash(gB); // 根局面哈希(增量传递)
-  // 迭代加深: 逐步增加深度,利用置换表
-  for(var id=2;id<=maxDepth;id+=2){
-    var alpha=-Infinity,beta=Infinity;
-    // aspiration window (第3次迭代后用窄窗口加速)
-    if(id>=6&&bs>-900000&&bs<900000){
-      alpha=bs-50;beta=bs+50;
-    }
-    var rootBest=null,rootScore=-Infinity;
-    for(var i=0;i<top.length;i++){
+  // 走法多样化: 近似等价着法随机选择(幅度小于最小棋型分差,不损棋力,避免每局走法完全固化)
+  var jitter=curDiff>=4?250:curDiff>=3?600:curDiff>=2?1500:3000;
+  var rh=gHash(gB);
+  var id=2,doneDepth=0,lastYield=Date.now();
+  gTimeLimit=budget; // 主搜索阶段使用全额预算
+  gAbort=false;
+  function finish(){
+    if(gen!==gGen||!gAiThink||curGame!=='gomoku')return;
+    var info='<span class="tag">搜索</span> 深度'+doneDepth+' 节点'+gNodes+' 耗时'+((Date.now()-gStart)/1000).toFixed(1)+'s';
+    if(bs>800000)info+=' [优势]';
+    else if(bs<-800000)info+=' [劣势]';
+    showAIInfo(info);
+    cb(best);
+  }
+  function runIter(){
+    if(gen!==gGen||!gAiThink||curGame!=='gomoku')return;
+    if(id>maxDepth||gAbort){finish();return}
+    var rootBest=null,rootScore=-Infinity,rootJit=-Infinity,rootAlpha=-5000000; // rootAlpha有限: ±Infinity经零窗口运算产生NaN/Infinity污染
+    var i=0;
+    function step(){
+      if(gen!==gGen||!gAiThink||curGame!=='gomoku')return;
+      if(gAbort||i>=top.length){endIter();return}
       var mx=top[i].x,my=top[i].y;
-      gB[my][mx]=aiP;
+      gMake(mx,my,aiP);
       var mh=rh^gZob[(my*GS+mx)*2+(aiP-1)];
       var sc;
       if(i===0){
-        sc=-gAlphaBeta(gB,id-1,-beta,-alpha,false,aiP,huP,0,mh);
+        sc=-gAlphaBeta(gB,id-1,-5000000,5000000,false,aiP,huP,0,mh);
       }else{
-        // PVS: 先用零窗口搜索
-        sc=-gAlphaBeta(gB,id-1,-alpha-1,-alpha,false,aiP,huP,0,mh);
-        if(sc>alpha&&sc<beta){
-          // 重搜索
-          sc=-gAlphaBeta(gB,id-1,-beta,-alpha,false,aiP,huP,0,mh);
-        }
+        sc=-gAlphaBeta(gB,id-1,-rootAlpha-1,-rootAlpha,false,aiP,huP,0,mh); // PVS零窗口
+        if(!gAbort&&sc>rootAlpha)sc=-gAlphaBeta(gB,id-1,-5000000,-rootAlpha,false,aiP,huP,0,mh);
       }
-      gB[my][mx]=0;
-      top[i].ls=sc; // 记录本层得分,用于下一层排序
-      if(gAbort)break;
-      if(curDiff<=1)sc+=Math.random()*8-4;
-      if(sc>rootScore){rootScore=sc;rootBest=top[i]}
-      if(sc>alpha)alpha=sc;
-    }
-    if(gAbort)break;
-    if(rootBest){best=rootBest;bs=rootScore}
-    // aspiration window失败: 重新搜索
-    if(bs<=alpha-50||bs>=beta+50){
-      gAbort=false;gStart=Date.now();
-      for(var ri=0;ri<top.length;ri++){
-        var rx=top[ri].x,ry=top[ri].y;
-        gB[ry][rx]=aiP;
-        var rmh=rh^gZob[(ry*GS+rx)*2+(aiP-1)];
-        var rsc=-gAlphaBeta(gB,id-1,-Infinity,Infinity,false,aiP,huP,0,rmh);
-        gB[ry][rx]=0;
-        top[ri].ls=rsc;
-        if(gAbort)break;
-        if(rsc>rootScore){rootScore=rsc;rootBest=top[ri]}
+      gUnmake(mx,my);
+      if(!gAbort){
+        top[i].ls=sc;
+        var js=sc+(Math.random()*2-1)*jitter;
+        if(js>rootJit){rootJit=js;rootScore=sc;rootBest=top[i]}
+        if(sc>rootAlpha)rootAlpha=sc;
       }
-      if(rootBest){best=rootBest;bs=rootScore}
+      i++;
+      if(!gAbort&&Date.now()-gStart>gTimeLimit)gAbort=true;
+      if(Date.now()-lastYield>12){lastYield=Date.now();gYield(step)}
+      else step();
     }
-    // 用本层得分重排根着法(下一迭代更快命中最佳着法)
-    if(!gAbort&&id<maxDepth){
-      top.sort(function(a,c){return(c.ls||-Infinity)-(a.ls||-Infinity)});
+    function endIter(){
+      if(rootBest){best=rootBest;bs=rootScore;doneDepth=id}
+      if(gAbort||gen!==gGen||!gAiThink||curGame!=='gomoku'){finish();return}
+      top.sort(function(a,c){return(c.ls||-Infinity)-(a.ls||-Infinity)}); // 上层得分重排根着法,下一迭代更快命中最佳
+      if(Date.now()-gStart>gTimeLimit*0.5){gAbort=true;finish();return} // 剩余预算不足以完成更深一层
+      id+=2;
+      runIter();
     }
-    // 时间检查
-    if(Date.now()-gStart>timeLimit)break;
+    step();
   }
-  info='<span class="tag">搜索</span> 深度'+maxDepth+' 节点'+gNodes+' 耗时'+((Date.now()-gStart)/1000).toFixed(1)+'s';
-  if(bs>800000)info+=' [优势]';
-  else if(bs<-800000)info+=' [劣势]';
-  showAIInfo(info);
-  return best;
+  runIter();
 }
 
 function initGomoku(){
   clearAnims();
+  gGen++; // 使旧异步搜索链失效
   cv=$('bd');cv.width=GX;cv.height=GX;cx=cv.getContext('2d');
   gB=[];for(var i=0;i<GS;i++)gB.push(new Array(GS).fill(0));
   gH=[];gCur=1;gAiThink=false;gLast=null;hideOver();showAIInfo('');
-  $('p1').textContent=playerFirst?'你':'电脑';
-  $('p2').textContent=playerFirst?'电脑':'你';
+  if(pvpMode){$('p1').textContent='黑方';$('p2').textContent='白方';$('st').textContent='黑方回合'}
+  else{$('p1').textContent=playerFirst?'你':'电脑';$('p2').textContent=playerFirst?'电脑':'你'}
   setupEv();updSt();drawGomoku();updCursor();
   // 如果电脑先手
-  if(!playerFirst){
+  if(!playerFirst&&!pvpMode){
     gCur=2;gAiThink=true;
     $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
     updCursor();
     setTimeout(function(){
       if(!gAiThink||curGame!=='gomoku')return;
-      var m=gAIMove();
-      if(m){gB[m.y][m.x]=1;gH.push({x:m.x,y:m.y,p:1,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:1};animGomokuPlace(m.x,m.y,true)}
-      gCur=2;gAiThink=false;updSt();updCursor();applyPendingDiff();
+      gAIMove(function(m){
+        if(!gAiThink||curGame!=='gomoku'||over)return;
+        if(m){gB[m.y][m.x]=1;gH.push({x:m.x,y:m.y,p:1,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:1};animGomokuPlace(m.x,m.y,true)}
+        gCur=2;gAiThink=false;updSt();updCursor();applyPendingDiff();
+      });
     },50);
   }
 }
@@ -3670,27 +3915,37 @@ function drawGomoku(skipX,skipY){
   }
 }
 function gomokuPlay(x,y){
-  var playerColor=playerFirst?1:2;
+  var playerColor=pvpMode?gCur:(playerFirst?1:2);
   var aiColor=playerFirst?2:1;
-  if(over||gAiThink||gCur!==playerColor||gB[y][x]!==0)return;
+  if(over||gAiThink||gB[y][x]!==0)return;
+  if(!pvpMode&&gCur!==playerColor)return;
   gB[y][x]=playerColor;gH.push({x:x,y:y,p:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:x,y:y,p:playerColor};animGomokuPlace(x,y,playerColor===1);playSound('place');
-  if(gCheckWin(gB,x,y,playerColor)){addS('w');showOver('胜','你赢了','win');playSound('win');return}
-  gCur=aiColor;updSt();gAiThink=true;updCursor();
+  if(gCheckWin(gB,x,y,playerColor)){
+    if(pvpMode)showOver(playerColor===1?'黑胜':'白胜','连五','win');
+    else{addS('w');showOver('胜','你赢了','win')}
+    playSound('win');return;
+  }
+  gCur=3-gCur;updSt();updCursor();
+  if(pvpMode){$('st').textContent=gCur===1?'黑方回合':'白方回合';return}
+  gAiThink=true;updCursor();
   $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
-  // 等落子动画(下落300ms+涟漪340ms)真正播完再启动同步AI搜索, 否则主线程被阻塞导致玩家棋子悬空
+  // AI搜索异步分块执行,棋子落地即启动(不等涟漪),搜索期间UI零冻结
   afterAnims(function(){
     if(!gAiThink||curGame!=='gomoku'||over)return;
-    var m=gAIMove();
-    if(m){gB[m.y][m.x]=aiColor;gH.push({x:m.x,y:m.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:aiColor};animGomokuPlace(m.x,m.y,aiColor===1);playSound('place');
-      if(gCheckWin(gB,m.x,m.y,aiColor)){addS('l');showOver('负','再来一局','lose');playSound('lose');gAiThink=false;updCursor();applyPendingDiff();return}
-    }
-    gCur=playerColor;gAiThink=false;updSt();updCursor();applyPendingDiff();
+    gAIMove(function(m){
+      if(!gAiThink||curGame!=='gomoku'||over)return;
+      if(m){gB[m.y][m.x]=aiColor;gH.push({x:m.x,y:m.y,p:aiColor,t:Math.round((Date.now()-gameStartTime)/1000)});gLast={x:m.x,y:m.y,p:aiColor};animGomokuPlace(m.x,m.y,aiColor===1);playSound('place');
+        if(gCheckWin(gB,m.x,m.y,aiColor)){addS('l');showOver('负','再来一局','lose');playSound('lose');gAiThink=false;updCursor();applyPendingDiff();return}
+      }
+      gCur=playerColor;gAiThink=false;updSt();updCursor();applyPendingDiff();
+    });
   });
 }
 function updSt(){
   var s=$('st');
   if(over)return;
   if(curGame==='gomoku'){
+    if(pvpMode){s.textContent=gCur===1?'黑方回合':'白方回合';s.style.color=gCur===1?'var(--accent)':'var(--ink-s)';return}
     if(gAiThink){s.style.color='var(--red)'}
     else if(gCur===1){s.textContent='你的回合';s.style.color='var(--accent)'}
     else{s.textContent='电脑回合';s.style.color='var(--ink-s)'}
@@ -3709,10 +3964,11 @@ function initGo(){
   clearAnims();
   goB=[];for(var i=0;i<GSZ;i++)goB.push(new Array(GSZ).fill(0));
   goKo=null;goLast=null;goCur=1;goPass=0;goOver=false;goAi=false;goH=null;goAbort=false;goCaps=[0,0];goHist=[];hideOver();showAIInfo('');
-  $('p1').textContent=playerFirst?'你（黑）':'AI（黑）';$('p2').textContent=playerFirst?'AI（白）':'你（白）';$('st').textContent='请落子';
+  if(pvpMode){$('p1').textContent='黑方';$('p2').textContent='白方';$('st').textContent='黑方落子'}
+  else{$('p1').textContent=playerFirst?'你（黑）':'AI（黑）';$('p2').textContent=playerFirst?'AI（白）':'你（白）';$('st').textContent='请落子'}
   setupEv();drawGo();
   // 如果电脑先手(AI下黑棋)
-  if(!playerFirst){
+  if(!playerFirst&&!pvpMode){
     goCur=2;goAi=true;goAbort=false;
     $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
     goMCTS(goB,1,goKo,function(m){
@@ -3777,109 +4033,6 @@ function goTry(b,x,y,c,ko){
   if(cap.length===1&&og.stones.length===1)nk={x:cap[0][0],y:cap[0][1]};
   return{valid:true,captured:cap,newBoard:nb,newKo:nk};
 }
-function goLegal(b,c,ko){
-  var m=[];
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
-    if(b[x][y]!==0)continue;
-    var r=goTry(b,x,y,c,ko);
-    if(r.valid)m.push([x,y]);
-  }
-  return m;
-}
-// 眼判断 (真眼/假眼)
-function goIsEye(b,x,y,c){
-  var ns=goNb(x,y);
-  for(var i=0;i<ns.length;i++)if(b[ns[i][0]][ns[i][1]]!==c)return false;
-  // 检查田字四角
-  var dg=[[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]],sc=0,wl=0;
-  for(var i=0;i<dg.length;i++){
-    if(dg[i][0]<0||dg[i][0]>=GSZ||dg[i][1]<0||dg[i][1]>=GSZ)wl++;
-    else if(b[dg[i][0]][dg[i][1]]===c)sc++;
-    else wl++;
-  }
-  // 边角: 至少1角同色; 边: 至少2角; 中央: 至少3角
-  if(wl>0)return(sc+wl>=4);
-  return sc>=3;
-}
-function goFilt(b,m,c){
-  return m.filter(function(mm){return!goIsEye(b,mm[0],mm[1],c)});
-}
-// 邻近候选点: 已有棋子周围2格内的空点(rollout/MCTS用,代替全盘361点合法性检查,快10倍+)
-// 合法性(自杀/劫)在真正落子时由goTry验证
-function goNear(b){
-  var seen=new Uint8Array(GSZ*GSZ),m=[];
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
-    if(b[x][y]===0)continue;
-    for(var dx=-2;dx<=2;dx++){
-      var nx=x+dx;if(nx<0||nx>=GSZ)continue;
-      for(var dy=-2;dy<=2;dy++){
-        var ny=y+dy;if(ny<0||ny>=GSZ)continue;
-        var k=nx*GSZ+ny;
-        if(b[nx][ny]===0&&!seen[k]){seen[k]=1;m.push([nx,ny])}
-      }
-    }
-  }
-  return m;
-}
-// 征子检测: 判断从(x,y)开始征子是否成立
-function goLadder(b,x,y,c){
-  var opp=c===1?2:1;
-  var g=goGrp(b,x,y);
-  if(g.liberties.length!==1)return false;
-  return goLadderRec(b,g,c,opp,0);
-}
-// 征子递归搜索：防守方逃跑后，攻击方尝试两手都试
-function goLadderRec(tb,g,c,opp,depth){
-  if(depth>80)return true;
-  var lib=g.liberties[0];
-  var lx=parseInt(lib/GSZ),ly=parseInt(lib%GSZ);
-  var dr=goTry(tb,lx,ly,c,null);
-  if(!dr.valid)return true;
-  var ng=goGrp(dr.newBoard,lx,ly);
-  if(ng.liberties.length===0)return true;
-  if(ng.liberties.length>=3)return false;
-  if(ng.liberties.length===1){
-    var lib2=ng.liberties[0];
-    var ax=parseInt(lib2/GSZ),ay=parseInt(lib2%GSZ);
-    var ar=goTry(dr.newBoard,ax,ay,opp,null);
-    if(!ar.valid)return false;
-    return true;
-  }
-  // 2气：攻击方两手都试，任一成功则征子成立
-  for(var i=0;i<2;i++){
-    var alib=ng.liberties[i];
-    var ax2=parseInt(alib/GSZ),ay2=parseInt(alib%GSZ);
-    var ar2=goTry(dr.newBoard,ax2,ay2,opp,null);
-    if(!ar2.valid)continue;
-    var ds=null;
-    for(var j=0;j<ng.stones.length;j++){
-      if(ar2.newBoard[ng.stones[j][0]][ng.stones[j][1]]===c){ds=ng.stones[j];break}
-    }
-    if(!ds)return true;
-    var dg=goGrp(ar2.newBoard,ds[0],ds[1]);
-    if(dg.liberties.length===0)return true;
-    if(dg.liberties.length===1){
-      if(goLadderRec(ar2.newBoard,dg,c,opp,depth+1))return true;
-    }
-  }
-  return false;
-}
-// 势力图评估
-function goInfluence(b){
-  var inf=[];
-  for(var i=0;i<GSZ;i++)inf.push(new Array(GSZ).fill(0));
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
-    if(b[x][y]===0)continue;
-    var val=b[x][y]===1?1:-1;
-    for(var dx=-4;dx<=4;dx++)for(var dy=-4;dy<=4;dy++){
-      var nx=x+dx,ny=y+dy,d=Math.abs(dx)+Math.abs(dy);
-      if(nx<0||nx>=GSZ||ny<0||ny>=GSZ||d===0)continue;
-      var decay=d<=1?0.8:d<=2?0.4:d<=3?0.2:0.1;
-      inf[nx][ny]+=val*decay;
-    }
-  }
-  return inf;
-}
 // 领地估算 (Bouzy膨胀腐蚀法)
 function goTerr(b){
   var t=[];
@@ -3905,17 +4058,6 @@ function goTerr(b){
     }
   }
   return t;
-}
-function goScore(b){
-  var t=goTerr(b),bk=0,wt=0;
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
-    if(b[x][y]===1)bk++;
-    else if(b[x][y]===2)wt++;
-    else if(t[x][y]===1)bk++;
-    else if(t[x][y]===2)wt++;
-  }
-  wt+=7.5;
-  return{black:bk,white:wt};
 }
 // Benson算法: 无条件活棋静态判定
 // 拥有两个不重叠关键围区(真眼)的棋链是无条件活的
@@ -4070,129 +4212,847 @@ function goMatchJoseki(b){
   }
   return null;
 }
-// 3x3模式匹配 (用于rollout)
-function go3x3(b,x,y,c){
-  var opp=c===1?2:1;
-  var pat=0;
-  // 8邻域编码: 3^8 = 6561种模式
-  var dx=[-1,0,1,-1,1,-1,0,1],dy=[-1,-1,-1,0,0,1,1,1];
-  for(var i=0;i<8;i++){
-    var nx=x+dx[i],ny=y+dy[i];
-    var v=0;
-    if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)v=2; // 边界视为对方
-    else if(b[nx][ny]===c)v=1;
-    else if(b[nx][ny]===opp)v=2;
-    pat=pat*3+v;
+// ============================================================
+//  围棋快速引擎 v2 (扁平棋盘 + 增量组ID/气表 + 气溢出重建)
+//  落子O(邻域)维护组与气, 邻组气查询O(1), rollout单次模拟<0.2ms
+// ============================================================
+var GO_MAXG=1400,GO_MAXL=64;
+var goRNbF=new Int32Array(GSZ*GSZ*4),goRNbN=new Uint8Array(GSZ*GSZ);
+(function(){
+  for(var x0=0;x0<GSZ;x0++)for(var y0=0;y0<GSZ;y0++){
+    var p0=x0*GSZ+y0,k=0;
+    if(x0>0)goRNbF[p0*4+k++]=p0-GSZ;
+    if(x0<GSZ-1)goRNbF[p0*4+k++]=p0+GSZ;
+    if(y0>0)goRNbF[p0*4+k++]=p0-1;
+    if(y0<GSZ-1)goRNbF[p0*4+k++]=p0+1;
+    goRNbN[p0]=k;
   }
-  return pat;
+})();
+var goRB=new Int8Array(GSZ*GSZ);       // 棋盘 0空 1黑 2白
+var goRId=new Int32Array(GSZ*GSZ);     // 点→组ID (-1空)
+var goRNext=new Int32Array(GSZ*GSZ);   // 组成员链表
+var goRHead=new Int32Array(GO_MAXG);   // 组链头
+var goRLibs=new Int16Array(GO_MAXG*GO_MAXL); // 组气表(记录前GO_MAXL口气)
+var goRLibC=new Int16Array(GO_MAXG);   // 组已记录气数
+var goRGCol=new Int8Array(GO_MAXG);    // 组颜色
+var goROvf=new Uint8Array(GO_MAXG);    // 气表溢出标记(实际气>GO_MAXL, 清零时需重建)
+var goRMark=new Int32Array(GO_MAXG);   // 组访问stamp(邻去重)
+var goRCapM=new Int32Array(GSZ*GSZ);   // 提子点/区域访问标记
+var goRScr=new Int32Array(GSZ*GSZ);    // BFS点访问标记
+var goRLibM=new Int32Array(GSZ*GSZ);   // 气去重标记(重建用)
+var goRScrQ=new Int32Array(GSZ*GSZ);   // BFS复用队列
+var goRFreeG=new Int32Array(GO_MAXG);  // 空闲组ID栈
+var goRFreeGN=0,goRNextG=1;
+var goRStamp=0,goRCapSt=0;
+var goRNear=new Uint8Array(GSZ*GSZ),goRNearList=[];
+// goRPlay就地scratch(免分配)
+var goRPSg=new Int32Array(4),goRPEg=new Int32Array(4),goRPDead=new Int32Array(4),goRPCaps=new Int32Array(GSZ*GSZ);
+function goRAlloc(c){
+  var g;
+  if(goRFreeGN>0)g=goRFreeG[--goRFreeGN];
+  else{g=goRNextG++;goRHead[g]=-1}
+  goRGCol[g]=c;goRLibC[g]=0;goROvf[g]=0;goRAtariV[g]=0;
+  return g;
 }
-// 模式权重表 (简化: 邻接己方子加分)
-function goPatternWeight(b,x,y,c){
-  var w=1.0;
-  var ns=goNb(x,y);
-  var own=0,opp=0;
-  for(var i=0;i<ns.length;i++){
-    if(b[ns[i][0]][ns[i][1]]===c)own++;
-    else if(b[ns[i][0]][ns[i][1]]===3-c)opp++;
+function goRFree(g){goRFreeG[goRFreeGN++]=g;goRHead[g]=-1;goROvf[g]=0;goRAtariV[g]=0}
+// 叫吃(atari)组全局列表: rollout每步感知所有1气组(提敌/逃己)
+var goRAtariV=new Uint8Array(GO_MAXG);
+var goRAtariL=new Int32Array(1024);
+var goRAtariN=0;
+function goRUpdAtari(g){
+  if(goRHead[g]<0)return;
+  if(goRLibC[g]===1&&!goROvf[g]){
+    if(!goRAtariV[g]){
+      goRAtariV[g]=1;
+      if(goRAtariN>=1024)goRCompact();
+      goRAtariL[goRAtariN++]=g;
+    }
+  }else goRAtariV[g]=0;
+}
+function goRCompact(){
+  var w=0;
+  for(var i=0;i<goRAtariN;i++){
+    var g=goRAtariL[i];
+    if(goRAtariV[g]&&goRHead[g]>=0&&goRLibC[g]===1&&!goROvf[g])goRAtariL[w++]=g;
+    else goRAtariV[g]=0;
   }
-  // 紧邻己方: 好形
+  goRAtariN=w;
+}
+function goRLibAdd(g,q){
+  var base=g*GO_MAXL,c=goRLibC[g],L=goRLibs;
+  for(var i=0;i<c;i++)if(L[base+i]===q)return;
+  if(c<GO_MAXL){L[base+c]=q;goRLibC[g]=c+1}
+  else goROvf[g]=1;
+}
+function goRLibDel(g,q){
+  var base=g*GO_MAXL,c=goRLibC[g],L=goRLibs;
+  for(var i=0;i<c;i++){
+    if(L[base+i]===q){L[base+i]=L[base+c-1];goRLibC[g]=c-1;return}
+  }
+}
+// 组气重建(溢出清零路径): 从链头BFS收集全部气(排除ex点), ex=正在落的子
+function goRRebuildG(g,ex){
+  goRLibC[g]=0;goROvf[g]=0;
+  var st=++goRStamp,ls=++goRStamp,base=g*GO_MAXL,c=goRGCol[g];
+  var qh=0,qt=0,m=goRHead[g];
+  goRScrQ[qt++]=m;goRScr[m]=st;
+  while(qh<qt){
+    var cur=goRScrQ[qh++];
+    var nn=goRNbN[cur],cb=cur*4;
+    for(var i=0;i<nn;i++){
+      var n=goRNbF[cb+i],v=goRB[n];
+      if(v===0){
+        if(n===ex)continue;
+        if(goRLibM[n]!==ls){
+          goRLibM[n]=ls;
+          if(goRLibC[g]<GO_MAXL)goRLibs[base+goRLibC[g]++]=n;
+          else goROvf[g]=1;
+        }
+      }else if(v===c&&goRScr[n]!==st){goRScr[n]=st;goRScrQ[qt++]=n}
+    }
+  }
+}
+// 落子: 返回 -2=非法(占用/劫/自杀) / -1=成功无劫 / >=0=成功且劫点
+function goRPlay(p,c,koPos){
+  if(goRB[p]!==0||p===koPos)return -2;
+  var opp=3-c;
+  var st=++goRStamp;
+  var Sg=goRPSg,Eg=goRPEg,sN=0,eN=0;
+  var nb=goRNbF,nn=goRNbN[p],pb=p*4;
+  for(var i=0;i<nn;i++){
+    var n=nb[pb+i],v=goRB[n];
+    if(v===c){
+      var g=goRId[n];
+      if(goRMark[g]!==st){goRMark[g]=st;Sg[sN++]=g}
+    }else if(v===opp){
+      var g2=goRId[n];
+      if(goRMark[g2]!==st){goRMark[g2]=st;Eg[eN++]=g2}
+    }
+  }
+  // 敌组减p气, 收集死组(气清零且无溢出时才确认死)
+  var Dead=goRPDead,dN=0;
+  for(var i2=0;i2<eN;i2++){
+    var eg=Eg[i2];
+    goRLibDel(eg,p);goRUpdAtari(eg);
+    if(goRLibC[eg]===0&&goROvf[eg]){
+      goRRebuildG(eg,p);goRUpdAtari(eg);
+      if(goRLibC[eg]===0)Dead[dN++]=eg;
+    }else if(goRLibC[eg]===0)Dead[dN++]=eg;
+  }
+  // 标记提子点(暂不执行)
+  var capSt=++goRCapSt,caps=goRPCaps,capN=0;
+  for(var i3=0;i3<dN;i3++){
+    var m=goRHead[Dead[i3]];
+    while(m>=0){goRCapM[m]=capSt;caps[capN++]=m;m=goRNext[m]}
+  }
+  // 自杀判定(提交前): 新气 = ∪Sg气-{p} ∪ p邻(空或提子点)
+  var sSt=++goRStamp,cnt=0,ovf=false;
+  for(var i4=0;i4<sN;i4++){
+    var gb=Sg[i4]*GO_MAXL,gc=goRLibC[Sg[i4]];
+    for(var k=0;k<gc;k++){
+      var q=goRLibs[gb+k];
+      if(q!==p&&goRScr[q]!==sSt){goRScr[q]=sSt;cnt++}
+    }
+    if(goROvf[Sg[i4]])ovf=true;
+  }
+  for(var i5=0;i5<nn;i5++){
+    var n2=nb[pb+i5],v2=goRB[n2];
+    if((v2===0||goRCapM[n2]===capSt)&&goRScr[n2]!==sSt){goRScr[n2]=sSt;cnt++}
+  }
+  if(cnt===0){
+    if(ovf){ // 溢出导致低估: 重建Sg组气重算
+      cnt=0;
+      for(var i6=0;i6<sN;i6++)goRRebuildG(Sg[i6],p);
+      var sSt2=++goRStamp;
+      for(var i7=0;i7<sN;i7++){
+        var gb2=Sg[i7]*GO_MAXL,gc2=goRLibC[Sg[i7]];
+        for(var k2=0;k2<gc2;k2++){
+          var q2=goRLibs[gb2+k2];
+          if(q2!==p&&goRScr[q2]!==sSt2){goRScr[q2]=sSt2;cnt++}
+        }
+      }
+      for(var i8=0;i8<nn;i8++){
+        var n3=nb[pb+i8],v3=goRB[n3];
+        if((v3===0||goRCapM[n3]===capSt)&&goRScr[n3]!==sSt2){goRScr[n3]=sSt2;cnt++}
+      }
+    }
+    if(cnt===0){
+      for(var i9=0;i9<eN;i9++){goRLibAdd(Eg[i9],p);goRUpdAtari(Eg[i9])} // 回滚敌组减气
+      return -2;
+    }
+  }
+  // 执行提子(清邻近标记: 被提点重回候选集)
+  for(var i10=0;i10<capN;i10++){var q3=caps[i10];goRB[q3]=0;goRId[q3]=-1;goRNear[q3]=0}
+  for(var i11=0;i11<dN;i11++)goRFree(Dead[i11]);
+  // 提子点成为邻组的新气
+  for(var i12=0;i12<capN;i12++){
+    var q4=caps[i12],qb=q4*4,qn=goRNbN[q4];
+    for(var j=0;j<qn;j++){
+      var n4=nb[qb+j];
+      if(goRB[n4]!==0){var ng=goRId[n4];goRLibAdd(ng,q4);goRUpdAtari(ng)}
+    }
+  }
+  // 被提点邻近的存活棋子: 2格邻域空点(含被提点)补回候选集
+  if(capN>0){
+    for(var i12b=0;i12b<capN;i12b++){
+      var q5=caps[i12b],qb5=q5*4,qn5=goRNbN[q5];
+      for(var j5=0;j5<qn5;j5++){var n5b=nb[qb5+j5];if(goRB[n5b]!==0)goRAddNear(n5b)}
+    }
+  }
+  // 合并/新建组
+  var mg;
+  if(sN>0){
+    mg=Sg[0];
+    for(var i13=1;i13<sN;i13++){
+      var sg=Sg[i13],m2=goRHead[sg];
+      while(m2>=0){
+        var nx=goRNext[m2];
+        goRId[m2]=mg;goRNext[m2]=goRHead[mg];goRHead[mg]=m2;
+        m2=nx;
+      }
+      var sgb=sg*GO_MAXL,sgc=goRLibC[sg];
+      for(var k3=0;k3<sgc;k3++)goRLibAdd(mg,goRLibs[sgb+k3]);
+      if(goROvf[sg])goROvf[mg]=1;
+      goRFree(sg);
+    }
+    goRId[p]=mg;goRNext[p]=goRHead[mg];goRHead[mg]=p;
+    for(var i14=0;i14<nn;i14++){var n5=nb[pb+i14];if(goRB[n5]===0)goRLibAdd(mg,n5)}
+    goRLibDel(mg,p);
+  }else{
+    mg=goRAlloc(c);
+    goRId[p]=mg;goRNext[p]=-1;goRHead[mg]=p;
+    for(var i15=0;i15<nn;i15++){var n6=nb[pb+i15];if(goRB[n6]===0)goRLibAdd(mg,n6)}
+  }
+  goRB[p]=c;
+  goRAddNear(p);
+  goRUpdAtari(mg);
+  if(capN===1&&sN===0)return caps[0];
+  return -1;
+}
+// 邻近标记: p周围2格空点加入候选集
+function goRAddNear(p){
+  var x=(p/GSZ)|0,y=p%GSZ;
+  for(var dx=-2;dx<=2;dx++){
+    var nx=x+dx;if(nx<0||nx>=GSZ)continue;
+    for(var dy=-2;dy<=2;dy++){
+      var ny=y+dy;if(ny<0||ny>=GSZ)continue;
+      var np=nx*GSZ+ny;
+      if(goRB[np]===0&&!goRNear[np]){goRNear[np]=1;goRNearList.push(np)}
+    }
+  }
+}
+// 候选集重建(压缩累积的死点)
+function goRNearRebuild(){
+  goRNear.fill(0);goRNearList.length=0;
+  for(var p=0;p<GSZ*GSZ;p++){
+    if(goRB[p]!==0)goRAddNear(p);
+  }
+}
+// 真眼判断
+function goRIsEye(p,c){
+  var nb=goRNbF,nn=goRNbN[p],pb=p*4;
+  for(var i=0;i<nn;i++)if(goRB[nb[pb+i]]!==c)return false;
+  var x=(p/GSZ)|0,y=p%GSZ,sc=0,wl=0;
+  for(var dx=-1;dx<=1;dx+=2)for(var dy=-1;dy<=1;dy+=2){
+    var nx=x+dx,ny=y+dy;
+    if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)wl++;
+    else if(goRB[nx*GSZ+ny]===c)sc++;
+    else wl++;
+  }
+  if(wl>0)return sc+wl>=4;
+  return sc>=3;
+}
+// c方可落候选(邻近空点, 排真眼)
+function goRCands(c){
+  var out=[];
+  for(var i=0;i<goRNearList.length;i++){
+    var p=goRNearList[i];
+    if(goRB[p]!==0)continue;
+    if(goRIsEye(p,c))continue;
+    out.push(p);
+  }
+  return out;
+}
+// 载入局面: 重建棋盘+分组结构(免分配, stamp归零+标记清空防串扰)
+function goRLoad(b){
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++)goRB[x*GSZ+y]=b[x][y];
+  goRNextG=1;goRFreeGN=0;goRStamp=0;goRCapSt=0;
+  goRId.fill(-1);goRScr.fill(0);goRLibM.fill(0);goRMark.fill(0);goRCapM.fill(0);
+  goROvf.fill(0);goRLibC.fill(0);goRHead.fill(-1);
+  for(var p=0;p<GSZ*GSZ;p++){
+    if(goRB[p]===0||goRId[p]>=0)continue;
+    var g=goRAlloc(goRB[p]);
+    var qh=0,qt=0;
+    goRScrQ[qt++]=p;goRId[p]=g;
+    var seen=++goRStamp;
+    goRScr[p]=seen;
+    while(qh<qt){
+      var cur=goRScrQ[qh++];
+      goRNext[cur]=goRHead[g];goRHead[g]=cur;
+      var nn=goRNbN[cur],cb=cur*4;
+      for(var i=0;i<nn;i++){
+        var n=goRNbF[cb+i],v=goRB[n];
+        if(v===0)goRLibAdd(g,n);
+        else if(v===goRB[p]&&goRScr[n]!==seen){goRScr[n]=seen;goRId[n]=g;goRScrQ[qt++]=n}
+      }
+    }
+  }
+  goRNear.fill(0);goRNearList.length=0;
+  for(var p2=0;p2<GSZ*GSZ;p2++){
+    if(goRB[p2]!==0)goRAddNear(p2);
+  }
+  goRAtariV.fill(0);goRAtariN=0;
+  for(var g2=1;g2<goRNextG;g2++){
+    if(goRHead[g2]>=0&&goRLibC[g2]===1&&!goROvf[g2]){goRAtariV[g2]=1;goRAtariL[goRAtariN++]=g2}
+  }
+}
+// 轻量模式权重(rollout着法选择)
+function goRPatternW(p,c){
+  var w=1;
+  var nb=goRNbF,nn=goRNbN[p],pb=p*4,own=0,opn=0;
+  for(var i=0;i<nn;i++){
+    var v=goRB[nb[pb+i]];
+    if(v===c)own++;else if(v!==0)opn++;
+  }
   if(own>=1)w+=0.5;
   if(own>=2)w+=0.3;
-  // 紧邻对方: 接触战
-  if(opp>=1)w+=0.4;
-  // 跳/尖: 距离2的好形
-  var dg=[[x-1,y-1],[x+1,y-1],[x-1,y+1],[x+1,y+1]];
-  for(var i=0;i<dg.length;i++){
-    if(dg[i][0]>=0&&dg[i][0]<GSZ&&dg[i][1]>=0&&dg[i][1]<GSZ&&b[dg[i][0]][dg[i][1]]===c)w+=0.2;
-  }
-  // 三线四线优先
+  if(opn>=1)w+=0.4;
+  var x=(p/GSZ)|0,y=p%GSZ;
+  if(x>0&&y>0&&goRB[p-GSZ-1]===c)w+=0.2;
+  if(x>0&&y<GSZ-1&&goRB[p-GSZ+1]===c)w+=0.2;
+  if(x<GSZ-1&&y>0&&goRB[p+GSZ-1]===c)w+=0.2;
+  if(x<GSZ-1&&y<GSZ-1&&goRB[p+GSZ+1]===c)w+=0.2;
   var edge=Math.min(x,y,GSZ-1-x,GSZ-1-y);
   if(edge===2)w+=0.15;
   if(edge===3)w+=0.25;
-  if(edge===0)w*=0.3; // 一线避免
-  if(edge===1)w*=0.6; // 二线降低
+  if(edge===0)w*=0.3;
+  if(edge===1)w*=0.6;
   return w;
 }
-// Rollout模拟
-function goSim(b,c,ko,max){
-  var sb=b.map(function(r){return r.slice()}),sk=ko?{x:ko.x,y:ko.y}:null,sc=c,ps=0,mc=0;
-  while(ps<2&&mc<max){
-    var m=goNear(sb); // 邻近候选代替全盘goLegal,rollout提速10倍+
-    if(m.length===0){ps++;sk=null;sc=sc===1?2:1;mc++;continue}
-    var f=goFilt(sb,m,sc);
-    var um=f.length>0?f:m;
-    var ch=null,opp=sc===1?2:1;
-    // 策略1: 提子 (吃只剩1气的对方棋链, 征子成立时优先)
-    for(var i=0;i<um.length;i++){
-      var ns=goNb(um[i][0],um[i][1]);
-      for(var j=0;j<ns.length;j++){
-        if(sb[ns[j][0]][ns[j][1]]===opp){
-          var g=goGrp(sb,ns[j][0],ns[j][1]);
-          if(g.liberties.length===1){
-            // 征子成立时必定提子; 不成立也提(对方跑不掉的1气棋链)
-            ch=um[i];break;
+// 死子迭代清理: 眼位不足(<2)的链判死移除, 侵入对方实空的死子不再计分
+// 修正"围空送分"bug: 中国规则死子点归围住的一方
+var goRDG=new Int32Array(GSZ*GSZ);   // 点→本轮链ID
+var goRDCol=new Int8Array(GSZ*GSZ);  // 链颜色
+var goRDEye=new Int16Array(GSZ*GSZ); // 链眼位
+var goRGEye=new Int16Array(GO_MAXG); // 组ID→眼位(增量模式首轮用)
+var goRDNbC=new Int32Array(64);      // 区域邻接链ID缓存
+function goRCleanDead(){
+  var incr=true; // 首轮用增量组ID免链BFS; 一旦有死子(组结构失效)退回BFS
+  for(var iter=0;iter<5;iter++){
+    var st=++goRStamp,nc=0; // goRScr计数器必须用goRStamp(与goRPlay共用)
+    // 1. 逻辑分组剩余棋子(增量模式: 直接用goRId)
+    if(incr){
+      goRGEye.fill(0,0,goRNextG);
+    }else{
+      for(var p=0;p<GSZ*GSZ;p++){
+        if(goRB[p]===0||goRScr[p]===st)continue;
+        var c=goRB[p],cid=nc++;
+        goRDCol[cid]=c;goRDEye[cid]=0;
+        var qh=0,qt=0;
+        goRScrQ[qt++]=p;goRScr[p]=st;goRDG[p]=cid;
+        while(qh<qt){
+          var cur=goRScrQ[qh++];
+          var nn=goRNbN[cur],cb=cur*4;
+          for(var i=0;i<nn;i++){
+            var n=goRNbF[cb+i];
+            if(goRB[n]===c&&goRScr[n]!==st){goRScr[n]=st;goRDG[n]=cid;goRScrQ[qt++]=n}
           }
         }
       }
-      if(ch)break;
     }
-    // 策略2: 救子 (己方棋链只剩1气时逃跑, 但征子不成立时才跑)
-    if(!ch){
-      for(var i=0;i<um.length;i++){
-        var ns2=goNb(um[i][0],um[i][1]);
-        for(var j=0;j<ns2.length;j++){
-          if(sb[ns2[j][0]][ns2[j][1]]===sc){
-            var g2=goGrp(sb,ns2[j][0],ns2[j][1]);
-            if(g2.liberties.length===1){
-              // 检查征子: 如果对方征子成立, 逃跑无意义, 跳过
-              if(!goLadder(sb,ns2[j][0],ns2[j][1],sc)){ch=um[i];break}
-            }
+    // 2. 空区域分析: 单色邻接区域给该色所有邻接链加眼位
+    var rst=++goRCapSt;
+    for(var p2=0;p2<GSZ*GSZ;p2++){
+      if(goRB[p2]!==0||goRCapM[p2]===rst)continue;
+      var qh2=0,qt2=0,size=0,monoC=-1,mixed=false,nbc=0;
+      goRScrQ[qt2++]=p2;goRCapM[p2]=rst;
+      while(qh2<qt2){
+        var cur2=goRScrQ[qh2++];size++;
+        var nn2=goRNbN[cur2],cb2=cur2*4;
+        for(var i2=0;i2<nn2;i2++){
+          var n2=goRNbF[cb2+i2],v2=goRB[n2];
+          if(v2===0){
+            if(goRCapM[n2]!==rst){goRCapM[n2]=rst;goRScrQ[qt2++]=n2}
+          }else{
+            var cid2=incr?goRId[n2]:goRDG[n2];
+            var dup=false;
+            for(var k=0;k<nbc;k++)if(goRDNbC[k]===cid2){dup=true;break}
+            if(!dup&&nbc<64)goRDNbC[nbc++]=cid2;
+            if(monoC===-1)monoC=v2;
+            else if(monoC!==v2)mixed=true;
           }
         }
-        if(ch)break;
+      }
+      if(!mixed&&monoC>=0){
+        var contrib=size>=3?2:1;
+        if(incr){for(var k2=0;k2<nbc;k2++)goRGEye[goRDNbC[k2]]+=contrib}
+        else{for(var k2b=0;k2b<nbc;k2b++)goRDEye[goRDNbC[k2b]]+=contrib}
       }
     }
-    // 策略3: 模式加权随机
-    if(!ch){
-      var nr=[],tw=0;
-      for(var i=0;i<um.length;i++){
-        var ns3=goNb(um[i][0],um[i][1]);
-        var near=false;
-        for(var j=0;j<ns3.length;j++){if(sb[ns3[j][0]][ns3[j][1]]!==0){near=true;break}}
-        if(near){
-          var w=goPatternWeight(sb,um[i][0],um[i][1],sc);
-          nr.push({m:um[i],w:w});tw+=w;
-        }
-      }
-      if(nr.length>0&&tw>0){
-        var rnd=Math.random()*tw,cw=0;
-        for(var i=0;i<nr.length;i++){cw+=nr[i].w;if(rnd<=cw){ch=nr[i].m;break}}
-      }
-      if(!ch){
-        var pool=um;
-        ch=pool[Math.floor(Math.random()*pool.length)];
-      }
+    // 3. 眼位<2的链判死移除
+    var dead=false;
+    for(var p3=0;p3<GSZ*GSZ;p3++){
+      if(goRB[p3]===0)continue;
+      var ey=incr?goRGEye[goRId[p3]]:goRDEye[goRDG[p3]];
+      if(ey<2){goRB[p3]=0;dead=true}
     }
-    var r=goTry(sb,ch[0],ch[1],sc,sk);
-    if(r.valid){sb=r.newBoard;sk=r.newKo}
-    else{sk=null}
-    ps=0;sc=sc===1?2:1;mc++;
+    if(!dead)break;
+    incr=false;
   }
-  // 评估: 中国规则计分
-  var t=goTerr(sb),bk=0,wt=0;
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++){
-    if(sb[x][y]===1)bk++;
-    else if(sb[x][y]===2)wt++;
-    else if(t[x][y]===1)bk++;
-    else if(t[x][y]===2)wt++;
+}
+// 终局计分(中国规则,区域归属+死子清理): 返回refColor胜率
+function goRFinalScore(refColor){
+  goRCleanDead();
+  var st=++goRCapSt,bk=0,wt=0;
+  var q=goRScrQ;
+  for(var p=0;p<GSZ*GSZ;p++){
+    var v=goRB[p];
+    if(v===1){bk++;continue}
+    if(v===2){wt++;continue}
+    if(goRCapM[p]===st)continue;
+    var qh=0,qt=0,cnt=0,b1=false,b2=false;
+    goRCapM[p]=st;q[qt++]=p;
+    while(qh<qt){
+      var cur=q[qh++];
+      cnt++;
+      var nn=goRNbN[cur],cb=cur*4;
+      for(var i=0;i<nn;i++){
+        var n=goRNbF[cb+i],nv=goRB[n];
+        if(nv===0){
+          if(goRCapM[n]!==st){goRCapM[n]=st;q[qt++]=n}
+        }else if(nv===1)b1=true;else b2=true;
+      }
+    }
+    if(b1&&!b2)bk+=cnt;else if(b2&&!b1)wt+=cnt;
   }
   wt+=7.5;
   var d=bk-wt;
-  return 1/(1+Math.exp(-d*0.4*(c===1?1:-1)));
+  return refColor===1?d:-d; // 返回refColor视角分差(均值无偏, MCTS分差回传)
 }
-// 增强MCTS with RAVE
+// Rollout: 局部应手(上一手邻域1气组)+融合抽样加权; recMv/recC记录全程着法(AMAF)
+// goRSampleW: 单遍邻居扫描融合眼判定/模式/提子/救子, 眼返回-1
+function goRSampleW(p,c){
+  var nb=goRNbF,nn=goRNbN[p],pb=p*4;
+  var x=(p/GSZ)|0,y=p%GSZ;
+  var own=0,opn=0,cap=0,sav=0,wFill=0;
+  for(var j=0;j<nn;j++){
+    var n=nb[pb+j],v=goRB[n];
+    if(v===0)continue;
+    var g=goRId[n];
+    if(goRLibC[g]===1&&!goROvf[g]){
+      if(v===c){own++;sav++}else{opn++;cap++}
+    }else if(v===c)own++;
+    else{
+      opn++;
+      if(!goROvf[g]&&goRLibC[g]<=3)wFill+=(4-goRLibC[g]); // 气越少围杀越近
+    }
+  }
+  if(own===nn){ // 候选可能是真眼: 对角检查
+    var sc=0,wl=0;
+    for(var dx=-1;dx<=1;dx+=2)for(var dy=-1;dy<=1;dy+=2){
+      var nx=x+dx,ny=y+dy;
+      if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)wl++;
+      else if(goRB[nx*GSZ+ny]===c)sc++;
+      else wl++;
+    }
+    if(wl>0){if(sc+wl>=4)return -1}
+    else if(sc>=3)return -1;
+    return -2; // 己方包围但非真眼(打劫眼): 降权
+  }
+  var w=1;
+  if(own>=1)w+=0.5;
+  if(own>=2)w+=0.3;
+  if(opn>=1)w+=0.4;
+  if(cap>0)w+=3;
+  if(sav>0)w+=1.5;
+  if(wFill>0)w+=Math.min(2,wFill*0.4); // 围杀敌弱链(按气数加权)
+  if(opn===0&&own>=1)w=Math.min(w,0.15); // 己方势力内部: 硬下限(低于pass阈值0.25)
+  var edge=Math.min(x,y,GSZ-1-x,GSZ-1-y);
+  if(edge===2)w+=0.15;
+  else if(edge===3)w+=0.25;
+  else if(edge===0)w*=0.3;
+  else if(edge===1)w*=0.6;
+  return w;
+}
+// rollout专用xorshift32(比Math.random快, 跨模拟连续推进避免同序列)
+var goRSd=(Date.now()*2654435761)>>>0||1;
+function goRRnd(){goRSd^=goRSd<<13;goRSd^=goRSd>>>17;goRSd^=goRSd<<5;return (goRSd>>>0)/4294967296}
+function goRSim(startColor,koPos,maxMoves,recMv,recC){
+  var sc=startColor,sk=koPos,pass=0,mc=0;
+  var nb=goRNbF,nbn=goRNbN,L=goRNearList;
+  while(pass<2&&mc<maxMoves){
+    if(L.length>700)goRNearRebuild();
+    else if((mc&31)===31&&L.length>60){ // 就地压缩: 剔除已占用点, 提升抽样命中率
+      var w0=0;
+      for(var c2=0;c2<L.length;c2++){var pp=L[c2];if(goRB[pp]===0)L[w0++]=pp}
+      L.length=w0;
+    }
+    var nl=L.length;
+    if(nl===0){pass++;sk=-1;sc=3-sc;mc++;continue}
+    var opp=3-sc;
+    var mv=-1,bw=-1;
+    // 全局叫吃应手: 敌1气组→提(权10), 己1气组→逃(权6, 逃后有气才逃)
+    if(goRAtariN>0){
+      if((mc&63)===0&&goRAtariN>24)goRCompact();
+      for(var a=0;a<goRAtariN;a++){
+        var ag=goRAtariL[a];
+        if(!goRAtariV[ag])continue;
+        var tp=goRLibs[ag*GO_MAXL];
+        if(goRB[tp]!==0||tp===sk)continue;
+        if(goRGCol[ag]===opp){
+          if(10>bw){bw=10;mv=tp}
+        }else{
+          var esc=0,tb=tp*4,tn=nbn[tp];
+          for(var e=0;e<tn;e++){
+            var en=nb[tb+e],ev=goRB[en];
+            if(ev===0)esc++;
+            else if(ev===opp){var eg2=goRId[en];if(goRLibC[eg2]===1&&!goROvf[eg2])esc++}
+          }
+          if(esc>0&&6>bw){bw=6;mv=tp}
+        }
+      }
+    }
+    // 抽样候选: 融合权重(眼→跳过, 打劫眼→低权); 低权点(<0.25)不接受
+    var tries=Math.min(14,nl<<1);
+    for(var t=0;t<tries;t++){
+      var p=L[(goRRnd()*nl)|0];
+      if(goRB[p]!==0)continue;
+      var w=goRSampleW(p,sc);
+      if(w<0){
+        if(w===-1)continue;
+        w=0.3;
+      }
+      if(w<0.25)continue;
+      if(w>bw){bw=w;mv=p}
+    }
+    if(mv<0){
+      // 兜底全量扫描: 找权重>=0.25的点(找不到→pass, 不填己方内部)
+      var st2=(goRRnd()*nl)|0;
+      for(var t2=0;t2<nl;t2++){
+        var p2=L[(st2+t2)%nl];
+        if(goRB[p2]!==0)continue;
+        var w2=goRSampleW(p2,sc);
+        if(w2===-1)continue;
+        if(w2===-2)w2=0.3;
+        if(w2>=0.25){mv=p2;bw=w2;break}
+      }
+    }
+    if(mv<0){pass++;sk=-1;sc=3-sc;mc++;continue}
+    var r=goRPlay(mv,sc,sk);
+    if(r===-2){pass++;sk=-1}
+    else{
+      sk=r>=0?r:-1;pass=0;
+      if(recMv){recMv.push(mv);recC.push(sc)}
+    }
+    sc=3-sc;mc++;
+  }
+  var fd=goRFinalScore(startColor);
+  return fd>30?30:(fd<-30?-30:fd); // 限幅压方差(墙死±350极值→±30)
+}
+// 候选加权排序: goRSampleW权重 + 叫吃战术加成(按棋块大小成比例先验), 降序截断cap
+// 返回[点,排序权重,战术虚拟访问数,战术先验值]
+function goRNodeCands(cl,mover,koPos,cap){
+  var wl=[],i;
+  for(i=0;i<cl.length;i++){
+    var p=cl[i];
+    if(goRB[p]!==0)continue;
+    var w=goRSampleW(p,mover);
+    if(w===-1)continue;
+    if(w===-2)w=0.5;
+    wl.push([p,w,0,0]);
+  }
+  if(goRAtariN>0){
+    for(var a=0;a<goRAtariN;a++){
+      var ag=goRAtariL[a];
+      if(!goRAtariV[ag])continue;
+      var tp=goRLibs[ag*GO_MAXL];
+      if(goRB[tp]!==0||tp===koPos)continue;
+      var sz=0,m2=goRHead[ag];
+      while(m2>=0){sz++;m2=goRNext[m2]}
+      var tvv=0,tpv=0,ord=0;
+      if(goRGCol[ag]!==mover){ // 提敌: 价值≈1.2×子数+1
+        tvv=16;tpv=1.2*sz+1;ord=4;
+      }else{
+        var esc=0,tbn=tp*4,tn=goRNbN[tp];
+        for(var e=0;e<tn;e++){
+          var en=goRNbF[tbn+e],ev=goRB[en];
+          if(ev===0)esc++;
+          else if(ev!==mover){var eg=goRId[en];if(goRLibC[eg]===1&&!goROvf[eg])esc+=2}
+        }
+        if(esc>=2){tvv=8;tpv=1.2*sz;ord=3} // 逃己: 价值≈1.2×子数
+      }
+      if(tvv<=0)continue;
+      var got=false;
+      for(i=0;i<wl.length;i++)if(wl[i][0]===tp){
+        wl[i][1]+=ord;
+        if(wl[i][2]<tvv){wl[i][2]=tvv;wl[i][3]=tpv}
+        got=true;break;
+      }
+      if(!got)wl.push([tp,2+ord,tvv,tpv]);
+    }
+  }
+  wl.sort(function(a,b){return b[1]-a[1]});
+  if(wl.length>cap)wl.length=cap;
+  return wl;
+}
+// 节点创建: color=该节点move的落子方; 候选=下一手(3-color)按先验排序, rave虚拟访问(战术点加权)
+function goRNewNode(parent,mv,color,koPos,cap,cl){
+  var nxt=3-color;
+  if(cl===undefined)cl=goRCands(nxt);
+  var wl=goRNodeCands(cl,nxt,koPos,cap);
+  var node={parent:parent,move:mv,color:color,children:[],visits:0,wins:0,untried:[],raveV:{},raveW:{},di:parent?parent.di+1:0};
+  for(var i=0;i<wl.length;i++){
+    var vv=wl[i][2]>0?wl[i][2]:4;
+    var pv=wl[i][2]>0?wl[i][3]:Math.max(-4,Math.min(8,(wl[i][1]-1)*2.5));
+    node.untried.push(wl[i][0]);
+    node.raveV[wl[i][0]]=vv;
+    node.raveW[wl[i][0]]=vv*pv;
+  }
+  return node;
+}
+// ============================================================
+//  根级战术层: 叫吃应手(逃子/提子/反提/倒扑安全检查) + 征子读取
+//  MCTS的rollout分差噪声(±30)远大于单次叫吃价值(~2分), 纯统计搜索
+//  不可靠 → 战术局面用确定性应手, 杜绝"看不见叫吃"的低级失误
+// ============================================================
+function _lgGrp(bd,x,y){
+  var c=bd[x][y];if(c===0)return null;
+  var vis={},st=[],lb={},q=[[x,y]],qh=0;vis[x*GSZ+y]=1;
+  while(qh<q.length){
+    var cu=q[qh++];st.push(cu);
+    var ns=goNb(cu[0],cu[1]);
+    for(var i=0;i<ns.length;i++){
+      var nx=ns[i][0],ny=ns[i][1],k=nx*GSZ+ny,v=bd[nx][ny];
+      if(v===0)lb[k]=1;
+      else if(v===c&&!vis[k]){vis[k]=1;q.push([nx,ny])}
+    }
+  }
+  var lk=Object.keys(lb),ls=[];
+  for(var j=0;j<lk.length;j++){var kk=+lk[j];ls.push([(kk/GSZ)|0,kk%GSZ])}
+  return{stones:st,libs:ls,color:c};
+}
+function _lgPlay(bd,x,y,c){
+  if(bd[x][y]!==0)return -1;
+  bd[x][y]=c;
+  var opp=3-c,caps=0,ns=goNb(x,y);
+  for(var i=0;i<ns.length;i++){
+    var nx=ns[i][0],ny=ns[i][1];
+    if(bd[nx][ny]===opp){
+      var g=_lgGrp(bd,nx,ny);
+      if(g&&g.libs.length===0){
+        for(var j=0;j<g.stones.length;j++){bd[g.stones[j][0]][g.stones[j][1]]=0;caps++}
+      }
+    }
+  }
+  var og=_lgGrp(bd,x,y);
+  if(og.libs.length===0){bd[x][y]=0;return -1} // 自杀(此分支caps必为0)
+  return caps;
+}
+var _ladN=0;
+// 征子判定: bd上(x,y)组被attacker追杀, 返回true=逃不掉
+// 攻方优先占两气叫吃, 守方可逃单气点或反提攻方1气组; 深度+节点预算防爆炸
+function goLadderCaught(bd,x,y,attacker,depth){
+  var g=_lgGrp(bd,x,y);
+  if(!g)return true;
+  var L=g.libs.length;
+  if(L>=3)return false;      // 气够, 逃掉
+  if(L<=1)return true;       // 已叫吃(攻方下一手提)
+  if(depth>50||_ladN>1200)return false; // 预算耗尽按逃掉算(保守)
+  _ladN++;
+  var def=g.color;
+  for(var li=0;li<L;li++){
+    var lp=g.libs[li];
+    var b2=[];
+    for(var r=0;r<GSZ;r++)b2.push(bd[r].slice());
+    if(_lgPlay(b2,lp[0],lp[1],attacker)<0)continue;
+    var g2=_lgGrp(b2,x,y);
+    if(!g2)return true;
+    if(g2.libs.length>=3)continue; // 这手没叫吃到(被反提等), 换气
+    // 守方应手: 逃最后一口气 + 反提邻接的攻方1气组
+    var dmoves=[],seenM={};
+    if(g2.libs.length===1){
+      var mp=g2.libs[0];seenM[mp[0]*GSZ+mp[1]]=1;dmoves.push(mp);
+    }
+    for(var si=0;si<g2.stones.length;si++){
+      var stn=g2.stones[si],sns=goNb(stn[0],stn[1]);
+      for(var ni=0;ni<sns.length;ni++){
+        var sn=sns[ni];
+        if(b2[sn[0]][sn[1]]===attacker){
+          var ag=_lgGrp(b2,sn[0],sn[1]);
+          if(ag.libs.length===1){
+            var mp2=ag.libs[0],mk=mp2[0]*GSZ+mp2[1];
+            if(!seenM[mk]){seenM[mk]=1;dmoves.push(mp2)}
+          }
+        }
+      }
+    }
+    var esc=false;
+    for(var di=0;di<dmoves.length;di++){
+      var dm=dmoves[di];
+      var b3=[];
+      for(var r2=0;r2<GSZ;r2++)b3.push(b2[r2].slice());
+      if(_lgPlay(b3,dm[0],dm[1],def)<0)continue;
+      var g3=_lgGrp(b3,x,y);
+      if(!g3)continue;
+      if(g3.libs.length>=3){esc=true;break}
+      if(!goLadderCaught(b3,x,y,attacker,depth+1)){esc=true;break}
+    }
+    if(!esc)return true; // 这手叫吃后守方无路 → 征子成立
+  }
+  return false;
+}
+function goRSnapB(){
+  var nb=[];
+  for(var xx=0;xx<GSZ;xx++){
+    var row=new Array(GSZ);
+    for(var yy=0;yy<GSZ;yy++)row[yy]=goRB[xx*GSZ+yy];
+    nb.push(row);
+  }
+  return nb;
+}
+// 战术应手: 返回{p,tag}或null(局面无1气组或无可行应手)
+function goTactical(b,c,ko){
+  goRLoad(b);
+  var koPos=ko?ko.x*GSZ+ko.y:-1;
+  var opp=3-c;
+  var myAt=[],opAt=[];
+  for(var g=1;g<goRNextG;g++){
+    if(goRHead[g]<0)continue;
+    if(goRLibC[g]!==1||goROvf[g])continue;
+    var tp=goRLibs[g*GO_MAXL];
+    if(goRB[tp]!==0)continue;
+    if(goRGCol[g]===c)myAt.push([g,tp]);else opAt.push([g,tp]);
+  }
+  if(myAt.length===0&&opAt.length===0)return null;
+  function grpSize(gi){var n=0,m=goRHead[gi];while(m>=0){n++;m=goRNext[m]}return n}
+  function simPlay(p){ // 模拟我方落p(每次从原局面重载): {caps,libs}或null=非法
+    goRLoad(b);
+    var r=goRPlay(p,c,koPos);
+    if(r===-2)return null;
+    var caps=0;
+    for(var q=0;q<GSZ*GSZ;q++){
+      if(b[(q/GSZ)|0][q%GSZ]===opp&&goRB[q]===0)caps++;
+    }
+    var ng=goRId[p];
+    return{caps:caps,libs:goROvf[ng]?99:goRLibC[ng]};
+  }
+  var best=null,bestV=0;
+  // 1) 我方1气组: 逃(≥3气直接逃, 2气需征子判定) / 反提邻接敌组救活
+  for(var i=0;i<myAt.length;i++){
+    var g3=myAt[i][0],tp3=myAt[i][1];
+    var sz=grpSize(g3);
+    var one=goRHead[g3]; // 组内任一子(反提后存活校验)
+    var sim=simPlay(tp3);
+    if(sim){
+      if(sim.caps>0){ // 逃点同时提敌(对杀胜/反提)
+        if(sim.libs>=2){var v=sz+sim.caps+1;if(v>bestV){bestV=v;best={p:tp3,tag:'对杀提子'}}}
+      }else if(sim.libs>=3){
+        var v2=sz+1;if(v2>bestV){bestV=v2;best={p:tp3,tag:'逃叫吃'}}
+      }else if(sim.libs===2){
+        var nb=goRSnapB(); // sim后局面(逃出后)
+        _ladN=0;
+        if(!goLadderCaught(nb,(tp3/GSZ)|0,tp3%GSZ,opp,0)){
+          var v3=sz+1;if(v3>bestV){bestV=v3;best={p:tp3,tag:'逃叫吃'}}
+        }
+        // 逃不掉(被征死)→ 不逃, 防止越跑损失越大
+      }
+    }
+    // 反提救活: 提掉紧我气的敌1气组, 我组重获气
+    var m4=goRHead[g3];
+    var seenEg={};
+    while(m4>=0){
+      var mx=(m4/GSZ)|0,my=m4%GSZ,ns4=goNb(mx,my);
+      for(var ni=0;ni<ns4.length;ni++){
+        var nn=ns4[ni];
+        if(b[nn[0]][nn[1]]===opp){
+          var eg=_lgGrp(b,nn[0],nn[1]);
+          if(eg&&eg.libs.length===1){
+            var cp=eg.libs[0];
+            var simc=simPlay(cp[0]*GSZ+cp[1]);
+            if(simc&&simc.caps>0&&goRB[one]===c){
+              var og=goRId[one];
+              var ol=goROvf[og]?99:goRLibC[og];
+              if(ol>=2){
+                var v4=sz+simc.caps+1;
+                if(v4>bestV){bestV=v4;best={p:cp[0]*GSZ+cp[1],tag:'反提救活'}}
+              }
+            }
+          }
+        }
+      }
+      m4=goRNext[m4];
+    }
+  }
+  // 2) 敌方1气组: 提子(≥2气安全; 1气需倒扑检查)
+  for(var j=0;j<opAt.length;j++){
+    var g5=opAt[j][0],tp5=opAt[j][1];
+    var sim5=simPlay(tp5);
+    if(!sim5)continue;
+    var caps5=sim5.caps; // ≥1
+    if(sim5.libs>=2){
+      var v5=caps5+1;if(v5>bestV){bestV=v5;best={p:tp5,tag:'提子'}}
+    }else if(sim5.libs===1){
+      // 倒扑: 对方下一手反提我组, 净损则不提
+      var nb5=goRSnapB();
+      var lg=_lgGrp(nb5,(tp5/GSZ)|0,tp5%GSZ);
+      if(lg&&lg.libs.length===1){
+        var b5=[];
+        for(var r5=0;r5<GSZ;r5++)b5.push(nb5[r5].slice());
+        var rec=_lgPlay(b5,lg.libs[0][0],lg.libs[0][1],opp);
+        if(rec>0){
+          if(caps5-rec>0){var v6=caps5-rec+1;if(v6>bestV){bestV=v6;best={p:tp5,tag:'提子'}}}
+        }else{
+          var v7=caps5+1;if(v7>bestV){bestV=v7;best={p:tp5,tag:'提子'}}
+        }
+      }
+    }
+  }
+  return best;
+}
+// ============================================================
+//  MCTS树复用: 连续两手之间保留对应子树(访问数/RAVE统计全部继承)
+//  等效模拟数提升一倍以上; 局面不匹配(悔棋/新局)自动回退全新搜索
+// ============================================================
+var goTRoot=null,goTBase=null,goTKo=null,goTMove=-1,goTColor=0;
+var goTReuseCnt=0; // 诊断: 树复用生效次数
+function goTReset(){goTRoot=null;goTBase=null;goTKo=null;goTMove=-1;goTColor=0}
+function goTBoardsEq(a,bb){
+  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++)if(a[x][y]!==bb[x][y])return false;
+  return true;
+}
+function goTFixDepths(n,d){
+  n.di=d;
+  for(var i=0;i<n.children.length;i++)goTFixDepths(n.children[i],d+1);
+}
+// 回放验证: 上一手树中找到"我方着法→对方实际应手"的子节点提升为新根
+function goTPromote(b,c,koPos){
+  if(!goTRoot||!goTBase||goTMove<0||goTColor!==c)return null;
+  goRLoad(goTBase);
+  var koPrev=goTKo?goTKo.x*GSZ+goTKo.y:-1;
+  var r=goRPlay(goTMove,c,koPrev);
+  if(r===-2)return null;
+  var koAfter=r>=0?r:-1;
+  var cm=null;
+  for(var i=0;i<goTRoot.children.length;i++){
+    if(goTRoot.children[i].move===goTMove){cm=goTRoot.children[i];break}
+  }
+  if(!cm)return null;
+  var snap=goRSnapB();
+  if(goTBoardsEq(snap,b))return null; // 对方pass: 提升节点候选方向不符, 放弃复用
+  var opp=3-c;
+  for(var j=0;j<cm.children.length;j++){
+    var co=cm.children[j];
+    goRLoad(snap);
+    var rr=goRPlay(co.move,opp,koAfter);
+    if(rr===-2)continue;
+    if(goTBoardsEq(goRSnapB(),b)){
+      goTFixDepths(co,0);co.parent=null;return co;
+    }
+  }
+  return null;
+}
+// 增强MCTS + RAVE(AMAF含rollout全程) + 根先验 + 快引擎 + 树复用 + 根级战术层
 function goMCTS(b,c,ko,onMCTSResult){
-  // 先检查定式
   if(curDiff>=2){
     var joseki=goMatchJoseki(b);
     if(joseki){
@@ -4200,106 +5060,126 @@ function goMCTS(b,c,ko,onMCTSResult){
       onMCTSResult({move:[joseki.x,joseki.y]});return;
     }
   }
-  var ST=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
-  var m=goNear(b);if(m.length===0)m=goLegal(b,c,ko);
+  goRLoad(b);
+  var koPos=ko?ko.x*GSZ+ko.y:-1;
   var cnt=0;
-  for(var x=0;x<GSZ;x++)for(var y=0;y<GSZ;y++)if(b[x][y]!==0)cnt++;
-  // 开局优先星位
-  if(cnt<=8){
-    var gm=m.filter(function(mm){return ST.some(function(p){return p[0]===mm[0]&&p[1]===mm[1]})});
-    if(gm.length>0)m=gm;
+  for(var p0=0;p0<GSZ*GSZ;p0++)if(goRB[p0]!==0)cnt++;
+  if(cnt===0){
+    goTReset();
+    var ST0=[[3,3],[3,15],[15,3],[15,15],[9,9]];
+    var sp=ST0[(Math.random()*ST0.length)|0];
+    showAIInfo('<span class="tag">布局</span> 星位开局');
+    onMCTSResult({move:[sp[0],sp[1]]});return;
   }
-  var f=goFilt(b,m,c),um=f.length>0?f:m;
+  // 根级战术层: 1气组确定性应手(逃/提/反提), 不进入统计搜索
+  var tac=goTactical(b,c,ko);
+  if(tac){
+    var tx=(tac.p/GSZ)|0,ty=tac.p%GSZ;
+    if(goTry(b,tx,ty,c,ko).valid){
+      showAIInfo('<span class="tag">战术</span> '+tac.tag);
+      onMCTSResult({move:[tx,ty]});return;
+    }
+  }
+  var um=goRCands(c);
+  if(um.length===0){
+    um=[];
+    for(var p1=0;p1<GSZ*GSZ;p1++){
+      if(goRB[p1]!==0)continue;
+      if(goRIsEye(p1,c))continue;
+      um.push(p1);
+    }
+  }
   if(um.length===0){onMCTSResult(null);return}
-  // 难度控制模拟次数 (rollout提速后同时间内可跑更多模拟,棋力更强)
-  var SIMS=curDiff===1?500:curDiff===2?900:curDiff===3?1600:2400;
-  var MAXSIM=curDiff===1?50:curDiff===2?70:curDiff===3?100:120;
-  // RAVE数据结构
-  var root={parent:null,move:null,color:c===1?2:1,children:[],visits:0,wins:0,
-    untried:um.map(function(v){return[v[0],v[1]]}),
-    raveV:{},raveW:{}};
-  var nodes=0;
+  var ST=[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]];
+  if(cnt<=8){
+    var gm=[];
+    for(var i=0;i<um.length;i++){
+      var x=(um[i]/GSZ)|0,y=um[i]%GSZ;
+      for(var j=0;j<ST.length;j++)if(ST[j][0]===x&&ST[j][1]===y){gm.push(um[i]);break}
+    }
+    if(gm.length>0)um=gm;
+  }
+  var SIMS=curDiff===1?4000:curDiff===2?15000:curDiff===3?40000:80000;
+  var TLIMIT=curDiff===1?1500:curDiff===2?2500:curDiff===3?4000:5000;
+  var MAXSIM=Math.min(480,Math.max(100,540-cnt));
+  // 树复用: 匹配上一手子树则继承全部统计, 否则全新根
+  var root=goTPromote(b,c,koPos);
+  var reused=root!==null;
+  if(reused)goTReuseCnt++;
+  if(!root)root=goRNewNode(null,null,3-c,koPos,20,um);
+  var nodes=0,si=0;
   var mctsStart=Date.now();
-  var si=0;
+  var PMv=[],PMC=[];
   function runChunk(){
     if(goAbort){onDone();return}
-    // 时间片分批: 每批最多跑22ms就让出主线程,保证动画/界面全程流畅
     var chunkStart=Date.now();
-    var s=si;
-    var timeUp=false;
+    var s=si,timeUp=false;
     for(;s<SIMS;s++){
-      if((s&15)===0&&Date.now()-mctsStart>(curDiff>=4?5000:4000)){timeUp=true;break}
-      var node=root,sb=b.map(function(r){return r.slice()}),sk=ko?{x:ko.x,y:ko.y}:null;
-      var playedMoves=[]; // 记录本次模拟的着法 (用于RAVE)
-      // Selection
-      while(node.untried.length===0&&node.children.length>0){
-        var best=null,bv=-Infinity;
-        for(var i=0;i<node.children.length;i++){
-          var ch=node.children[i];
-          if(ch.visits===0){best=ch;break}
-          // UCT + RAVE
-          var mcVal=ch.wins/ch.visits;
-          var raveN=ch.raveV[ch.move?ch.move[0]*GSZ+ch.move[1]:0]||0;
-          var raveW=ch.raveW[ch.move?ch.move[0]*GSZ+ch.move[1]:0]||0;
-          var raveVal=raveN>0?raveW/raveN:0.5;
-          var beta=raveN/(raveN+ch.visits+4*0.5*raveN*ch.visits);
-          var q=(1-beta)*mcVal+beta*raveVal;
-          var ucb=q+1.4*Math.sqrt(Math.log(node.visits)/ch.visits);
-          if(ucb>bv){bv=ucb;best=ch}
+      if((s&31)===0&&Date.now()-mctsStart>TLIMIT){timeUp=true;break}
+      goRLoad(b); // 恢复根局面(全量重建免快照)
+      var node=root,sk=koPos;
+      PMv.length=0;PMC.length=0;
+      while(true){
+        // 渐进加宽: 先验排序候选, 访问数达2×子节点数才扩新子(防星形退化树)
+        if(node.untried.length>0&&(node.children.length===0||node.visits>=node.children.length*2)){
+          var mv=null;
+          while(node.untried.length>0){
+            mv=node.untried.shift();
+            var r2=goRPlay(mv,3-node.color,sk);
+            if(r2===-2){mv=null;continue}
+            sk=r2>=0?r2:-1;
+            PMv.push(mv);PMC.push(3-node.color);
+            break;
+          }
+          if(mv!==null){
+            var child=goRNewNode(node,mv,3-node.color,sk,32);
+            node.children.push(child);
+            node=child;
+          }
+          break;
         }
-        if(!best)break;
-        node=best;
-        if(node.move){
-          var r=goTry(sb,node.move[0],node.move[1],node.color,sk);
-          if(!r.valid)break;
-          sb=r.newBoard;sk=r.newKo;
-          playedMoves.push({move:node.move,color:node.color});
+        if(node.children.length>0){
+          var best=null,bv=-Infinity;
+          for(var i=0;i<node.children.length;i++){
+            var ch=node.children[i];
+            if(ch.visits===0){best=ch;break}
+            var mcVal=ch.wins/ch.visits;
+            var mk=ch.move;
+            var raveN=node.raveV[mk]||0,raveW=node.raveW[mk]||0;
+            var raveVal=raveN>0?raveW/raveN:0;
+            var beta=raveN/(raveN+ch.visits+ch.visits*raveN/30); // 衰减式: 访问增多后AMAF让位于mcVal
+            var q=(1-beta)*mcVal+beta*raveVal;
+            var ucb=q+8*Math.sqrt(Math.log(node.visits)/ch.visits); // 分差量纲探索系数
+            if(ucb>bv){bv=ucb;best=ch}
+          }
+          if(!best)break;
+          var r=goRPlay(best.move,best.color,sk);
+          if(r===-2)break;
+          sk=r>=0?r:-1;
+          PMv.push(best.move);PMC.push(best.color);
+          node=best;
+          continue;
         }
+        break;
       }
-      // Expansion
-      if(node.untried.length>0){
-        var mc2=node.color===1?2:1;
-        var mv=null,r2=null;
-        // 跳过无效着法，避免在不一致棋盘上继续
-        while(node.untried.length>0){
-          var idx=Math.floor(Math.random()*node.untried.length);
-          mv=node.untried.splice(idx,1)[0];
-          r2=goTry(sb,mv[0],mv[1],mc2,sk);
-          if(r2.valid)break;
-          mv=null;r2=null;
-        }
-        if(mv&&r2&&r2.valid){
-          sb=r2.newBoard;sk=r2.newKo;
-          var cm=goNear(sb),cf=goFilt(sb,cm,mc2===1?2:1);
-          var child={parent:node,move:mv,color:mc2,children:[],visits:0,wins:0,
-            untried:(cf.length>0?cf:cm).map(function(v){return[v[0],v[1]]}),
-            raveV:{},raveW:{}};
-          node.children.push(child);node=child;
-          playedMoves.push({move:mv,color:mc2});
-        }
-      }
-      // Simulation
-      var sr=goSim(sb,node.color===1?2:1,sk,MAXSIM);
-      // sr = P(opponent of node.color wins) = P(mover wins)
-      // Backpropagation with RAVE - use toggle to alternate sr/1-sr up the tree
+      var simStart=3-node.color;
+      var sr=goRSim(simStart,sk,MAXSIM,PMv,PMC);
       var n=node;
-      var addSr=false;
       while(n!==null){
         n.visits++;
-        var wp=addSr?sr:(1-sr);
+        var wp=(n.color===simStart)?sr:-sr;
         n.wins+=wp;
-        for(var pi=0;pi<playedMoves.length;pi++){
-          if(playedMoves[pi].color===n.color){
-            var mk=playedMoves[pi].move[0]*GSZ+playedMoves[pi].move[1];
-            n.raveV[mk]=(n.raveV[mk]||0)+1;
-            n.raveW[mk]=(n.raveW[mk]||0)+wp;
+        var pm=3-n.color,pend=Math.min(PMv.length,n.di+12); // AMAF窗口12手: 远处着法与节点语境无关
+        for(var pj=n.di;pj<pend;pj++){
+          if(PMC[pj]===pm){
+            var mk2=PMv[pj];
+            n.raveV[mk2]=(n.raveV[mk2]||0)+1;
+            n.raveW[mk2]=(n.raveW[mk2]||0)-wp; // 值取-candidates颜色视角(与先验一致)
           }
         }
-        addSr=!addSr;
         n=n.parent;
       }
       nodes++;
-      // 批内时间预算: 超过22ms立即让出,恢复下批继续
       if((s&7)===7&&Date.now()-chunkStart>22)break;
     }
     si=s;
@@ -4307,22 +5187,61 @@ function goMCTS(b,c,ko,onMCTSResult){
     else{onDone()}
   }
   function onDone(){
-    // 选最佳着法 (最高访问次数)
     var bn=null,bvis=-1;
     for(var i=0;i<root.children.length;i++){
       if(root.children[i].visits>bvis){bvis=root.children[i].visits;bn=root.children[i]}
     }
-    var aiWr=50;
-    var info='<span class="tag">MCTS</span> '+si+'次模拟 RAVE '+nodes+'节点';
-    if(bn){
-      aiWr=bn.wins/bn.visits*100;
-      info+=' 胜率'+aiWr.toFixed(1)+'%';
+    if(typeof goDBG!=='undefined'&&goDBG){
+      var dc=root.children.slice();
+      dc.sort(function(a,b){return b.visits-a.visits});
+      console.log('[DBG] sims='+si+' nodes='+nodes+' rootChildren='+root.children.length);
+      for(var d=0;d<Math.min(12,dc.length);d++){
+        var cn=dc[d],mk3=cn.move;
+        var rv=root.raveV[mk3]||0,rw=root.raveW[mk3]||0;
+        console.log('[DBG] #'+d+' ('+((mk3/GSZ)|0)+','+(mk3%GSZ)+') v='+cn.visits+' mean='+(cn.wins/cn.visits).toFixed(2)+' raveN='+rv+' raveVal='+(rv>0?(rw/rv).toFixed(2):'-'));
+      }
     }
+    var info='<span class="tag">MCTS</span> '+si+'次模拟 '+nodes+'节点'+(reused?' <span class="tag">树复用</span>':'');
+    if(bn){
+      var sd=bn.wins/bn.visits;
+      info+=' 预估分差'+(sd>=0?'+':'')+sd.toFixed(1);
+      // 保存树供下一手复用(回放验证失败自动回退)
+      goTRoot=root;goTBase=b;goTKo=ko;goTMove=bn.move;goTColor=c;
+    }else goTReset();
     showAIInfo(info);
-    onMCTSResult(bn?{move:bn.move}:null);
+    onMCTSResult(bn?{move:[(bn.move/GSZ)|0,bn.move%GSZ]}:null);
   }
   setTimeout(runChunk,0);
 }
+// 对局终局计分(中国规则+死子清理): 覆盖旧版"无死子判定"实现
+function goScore(b){
+  goRLoad(b);
+  goRCleanDead();
+  var st=++goRCapSt,bk=0,wt=0,q=goRScrQ;
+  for(var p=0;p<GSZ*GSZ;p++){
+    var v=goRB[p];
+    if(v===1){bk++;continue}
+    if(v===2){wt++;continue}
+    if(goRCapM[p]===st)continue;
+    var qh=0,qt=0,cnt=0,b1=false,b2=false;
+    goRCapM[p]=st;q[qt++]=p;
+    while(qh<qt){
+      var cur=q[qh++];
+      cnt++;
+      var nn=goRNbN[cur],cb=cur*4;
+      for(var i=0;i<nn;i++){
+        var n=goRNbF[cb+i],nv=goRB[n];
+        if(nv===0){
+          if(goRCapM[n]!==st){goRCapM[n]=st;q[qt++]=n}
+        }else if(nv===1)b1=true;else b2=true;
+      }
+    }
+    if(b1&&!b2)bk+=cnt;else if(b2&&!b1)wt+=cnt;
+  }
+  wt+=7.5;
+  return{black:bk,white:wt};
+}
+
 function drawGo(skipX,skipY){
   // 棋盘底色：使用缓存的木纹纹理（避免重绘时纹理跳动）
   var tex=makeWoodTexture(GOSZ,GOSZ,54321);
@@ -4360,15 +5279,17 @@ function drawGo(skipX,skipY){
   for(var i=0;i<GSZ;i++){cx.fillText(L[i],GOP+i*GOC,GOP-16);cx.fillText(String(GSZ-i),GOP-16,GOP+i*GOC)}
 }
 function goPlay(x,y){
-  var playerColor=playerFirst?1:2;
-  if(goOver||goAi||goCur!==playerColor)return;
+  var playerColor=pvpMode?goCur:(playerFirst?1:2);
+  if(goOver||goAi)return;
+  if(!pvpMode&&goCur!==playerColor)return;
   var r=goTry(goB,x,y,playerColor,goKo);
   if(!r.valid)return;
   goB=r.newBoard;goKo=r.newKo;goLast={x:x,y:y,c:playerColor};goPass=0;goHist.push({x:x,y:y,c:playerColor,t:Math.round((Date.now()-gameStartTime)/1000)});
-  if(r.captured.length>0){goCaps[playerFirst?0:1]+=r.captured.length;playSound('capture')}else{playSound('place')}
+  if(r.captured.length>0){goCaps[playerColor-1]+=r.captured.length;playSound('capture')}else{playSound('place')}
   animGoPlace(x,y,playerColor===1);
+  goCur=3-goCur;
+  if(pvpMode){$('st').textContent=goCur===1?'黑方落子':'白方落子';return}
   var aiColor=playerFirst?2:1;
-  goCur=aiColor;
   $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
   goAi=true;goAbort=false;
   // 等落子动画播完再启动MCTS(否则首批模拟同步阻塞主线程,玩家棋子悬空在半空)
@@ -4459,23 +5380,28 @@ function initXQ(){
   cv=$('bd');cv.width=XW;cv.height=XH;cx=cv.getContext('2d');
   xqB=xqInitBoard();
   clearAnims();
+  xqSearchGen++; // 使旧异步搜索链失效
   xqRed=playerFirst;xqAiRed=!playerFirst;xqSel=null;xqLegal=[];xqHist=[];xqOver=false;xqAi=false;xqTT=new Map();xqKiller=[];xqHist2=[];xqNodes=0;xqAbort=false;hideOver();showAIInfo('');
-  $('p1').textContent=playerFirst?'你（红）':'AI（红）';$('p2').textContent=playerFirst?'AI（黑）':'你（黑）';$('st').textContent=playerFirst?'你的回合':'AI回合';$('xm').innerHTML='';
+  if(pvpMode){$('p1').textContent='红方';$('p2').textContent='黑方';$('st').textContent='红方回合';xqRed=true}
+  else{$('p1').textContent=playerFirst?'你（红）':'AI（红）';$('p2').textContent=playerFirst?'AI（黑）':'你（黑）';$('st').textContent=playerFirst?'你的回合':'AI回合'}
+  $('xm').innerHTML='';
   setupEv();drawXQ();
   // 如果电脑先手(AI下红棋)
-  if(!playerFirst){
+  if(!playerFirst&&!pvpMode){
     $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';xqAi=true;
     setTimeout(function(){
       if(!xqAi||curGame!=='xq')return;
       try{
-        var bm=xqAIMove();
-        if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
-      }catch(e){console.error('XQ AI init error:',e)}
-      xqAi=false;
-      xqRed=false;drawXQ();xqUpdM();
-      var mc=xqCheck(xqB,false)?' 你被将军':'';
-      $('st').textContent='你的回合'+mc;
-      applyPendingDiff();
+        xqAIMove(function(bm){
+          if(!xqAi||curGame!=='xq'||xqOver)return;
+          if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+          xqAi=false;
+          xqRed=false;if(bm)animXQMove(bm.fr,bm.fc,bm.tr,bm.tc);else drawXQ();xqUpdM();
+          var mc=xqCheck(xqB,false)?' 你被将军':'';
+          $('st').textContent='你的回合'+mc;
+          applyPendingDiff();
+        });
+      }catch(e){console.error('XQ AI init error:',e);xqAi=false;drawXQ()}
     },50);
   }
 }
@@ -4484,57 +5410,115 @@ function xqSame(a,b){return(a>=1&&a<=7&&b>=1&&b<=7)||(a>=8&&a<=14&&b>=8&&b<=14)}
 function xqType(p){return p===0?0:(p<=7?p:p-7)}
 function xqInB(r,c){return r>=0&&r<10&&c>=0&&c<9}
 function xqPal(r,c,red){if(c<3||c>5)return false;return red?(r>=7&&r<=9):(r>=0&&r<=2)}
-// 生成所有走法(不检查将军)
-function xqGen(b,red){
+// 生成所有走法(不检查将军) capsOnly=true时只生成吃子走法(静态搜索用)
+function xqGen(b,red,capsOnly){
   var m=[];
   for(var r=0;r<10;r++)for(var c=0;c<9;c++){
     var p=b[r][c];if(p===0)continue;
-    if(red&&!xqRedP(p))continue;
-    if(!red&&xqRedP(p))continue;
-    xqGP(b,r,c,p,m);
+    if(red?p>=8:p<=7)continue; // 数值颜色判断(免xqRedP函数调用)
+    xqGP(b,r,c,p,m,capsOnly);
   }
   return m;
 }
-function xqGP(b,r,c,p,m){
+// 走法方向表(模块级常量: 免每次调用重复分配数组, 消除GC压力)
+var XQ_DIR4=[[-1,0],[1,0],[0,-1],[0,1]];
+var XQ_KN_MV=[[-2,-1,-1,0],[-2,1,-1,0],[2,-1,1,0],[2,1,1,0],[-1,-2,0,-1],[-1,2,0,1],[1,-2,0,-1],[1,2,0,1]];
+var XQ_BM_MV=[[-2,-2,-1,-1],[-2,2,-1,1],[2,-2,1,-1],[2,2,1,1]];
+var XQ_AD_MV=[[-1,-1],[-1,1],[1,-1],[1,1]];
+function xqGP(b,r,c,p,m,capsOnly){
+  var co=!!capsOnly;
+  function add(tr,tc){
+    var cap=b[tr][tc];
+    if(co&&cap===0)return;
+    if(cap!==0&&xqSame(p,cap))return;
+    m.push({fr:r,fc:c,tr:tr,tc:tc,piece:p,captured:cap});
+  }
   var t=xqType(p),red=xqRedP(p);
-  if(t===5){var d=[[-1,0],[1,0],[0,-1],[0,1]];for(var i=0;i<4;i++){var nr=r+d[i][0],nc=c+d[i][1];while(xqInB(nr,nc)){if(b[nr][nc]===0)m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:0});else{if(!xqSame(p,b[nr][nc]))m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:b[nr][nc]});break}nr+=d[i][0];nc+=d[i][1]}}}
-  else if(t===4){var km=[[-2,-1,-1,0],[-2,1,-1,0],[2,-1,1,0],[2,1,1,0],[-1,-2,0,-1],[-1,2,0,1],[1,-2,0,-1],[1,2,0,1]];for(var i=0;i<8;i++){var nr=r+km[i][0],nc=c+km[i][1];if(!xqInB(nr,nc))continue;if(b[r+km[i][2]][c+km[i][3]]!==0)continue;if(b[nr][nc]===0||!xqSame(p,b[nr][nc]))m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:b[nr][nc]})}}
-  else if(t===3){var bm=[[-2,-2,-1,-1],[-2,2,-1,1],[2,-2,1,-1],[2,2,1,1]];for(var i=0;i<4;i++){var nr=r+bm[i][0],nc=c+bm[i][1];if(!xqInB(nr,nc))continue;if(red&&nr<5)continue;if(!red&&nr>4)continue;if(b[r+bm[i][2]][c+bm[i][3]]!==0)continue;if(b[nr][nc]===0||!xqSame(p,b[nr][nc]))m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:b[nr][nc]})}}
-  else if(t===2){var am=[[-1,-1],[-1,1],[1,-1],[1,1]];for(var i=0;i<4;i++){var nr=r+am[i][0],nc=c+am[i][1];if(!xqPal(nr,nc,red))continue;if(b[nr][nc]===0||!xqSame(p,b[nr][nc]))m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:b[nr][nc]})}}
-  else if(t===1){var kd=[[-1,0],[1,0],[0,-1],[0,1]];for(var i=0;i<4;i++){var nr=r+kd[i][0],nc=c+kd[i][1];if(!xqPal(nr,nc,red))continue;if(b[nr][nc]===0||!xqSame(p,b[nr][nc]))m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:b[nr][nc]})}}
-  else if(t===6){var cd=[[-1,0],[1,0],[0,-1],[0,1]];for(var i=0;i<4;i++){var nr=r+cd[i][0],nc=c+cd[i][1],jp=false;while(xqInB(nr,nc)){if(b[nr][nc]===0){if(!jp)m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:0})}else{if(!jp)jp=true;else{if(!xqSame(p,b[nr][nc]))m.push({fr:r,fc:c,tr:nr,tc:nc,piece:p,captured:b[nr][nc]});break}}nr+=cd[i][0];nc+=cd[i][1]}}}
-  else if(t===7){var fwd=red?-1:1,nr=r+fwd;if(xqInB(nr,c)){if(b[nr][c]===0||!xqSame(p,b[nr][c]))m.push({fr:r,fc:c,tr:nr,tc:c,piece:p,captured:b[nr][c]})}var cr=red?r<=4:r>=5;if(cr){for(var dc=-1;dc<=1;dc+=2){var nc=c+dc;if(xqInB(r,nc)){if(b[r][nc]===0||!xqSame(p,b[r][nc]))m.push({fr:r,fc:c,tr:r,tc:nc,piece:p,captured:b[r][nc]})}}}}
+  if(t===5){for(var i=0;i<4;i++){var nr=r+XQ_DIR4[i][0],nc=c+XQ_DIR4[i][1];while(xqInB(nr,nc)){if(b[nr][nc]===0)add(nr,nc);else{if(!xqSame(p,b[nr][nc]))add(nr,nc);break}nr+=XQ_DIR4[i][0];nc+=XQ_DIR4[i][1]}}}
+  else if(t===4){for(var i=0;i<8;i++){var nr=r+XQ_KN_MV[i][0],nc=c+XQ_KN_MV[i][1];if(!xqInB(nr,nc))continue;if(b[r+XQ_KN_MV[i][2]][c+XQ_KN_MV[i][3]]!==0)continue;add(nr,nc)}}
+  else if(t===3){for(var i=0;i<4;i++){var nr=r+XQ_BM_MV[i][0],nc=c+XQ_BM_MV[i][1];if(!xqInB(nr,nc))continue;if(red&&nr<5)continue;if(!red&&nr>4)continue;if(b[r+XQ_BM_MV[i][2]][c+XQ_BM_MV[i][3]]!==0)continue;add(nr,nc)}}
+  else if(t===2){for(var i=0;i<4;i++){var nr=r+XQ_AD_MV[i][0],nc=c+XQ_AD_MV[i][1];if(!xqPal(nr,nc,red))continue;add(nr,nc)}}
+  else if(t===1){for(var i=0;i<4;i++){var nr=r+XQ_DIR4[i][0],nc=c+XQ_DIR4[i][1];if(!xqPal(nr,nc,red))continue;add(nr,nc)}}
+  else if(t===6){for(var i=0;i<4;i++){var nr=r+XQ_DIR4[i][0],nc=c+XQ_DIR4[i][1],jp=false;while(xqInB(nr,nc)){if(b[nr][nc]===0){if(!jp)add(nr,nc)}else{if(!jp)jp=true;else{if(!xqSame(p,b[nr][nc]))add(nr,nc);break}}nr+=XQ_DIR4[i][0];nc+=XQ_DIR4[i][1]}}}
+  else if(t===7){var fwd=red?-1:1,nr=r+fwd;if(xqInB(nr,c))add(nr,c);var cr=red?r<=4:r>=5;if(cr){for(var dc=-1;dc<=1;dc+=2){var nc=c+dc;if(xqInB(r,nc))add(r,nc)}}}
 }
 function xqKing(b,red){var tg=red?1:8;for(var r=0;r<10;r++)for(var c=0;c<9;c++)if(b[r][c]===tg)return[r,c];return null}
-function xqCheck(b,red){
-  var k=xqKing(b,red);if(!k)return true;
-  var kr=k[0],kc=k[1];
-  // 飞将检测
-  var ok=xqKing(b,!red);
-  if(ok&&kc===ok[1]){var cnt=0;for(var r=Math.min(kr,ok[0])+1;r<Math.max(kr,ok[0]);r++)if(b[r][kc]!==0)cnt++;if(cnt===0)return true}
-  // 反向查攻击: 只检查车、炮、马、兵能否攻击到王位(仕相将无法攻击对方王)
+// 增量王位跟踪: 搜索make/unmake时同步维护,免去每节点全盘找王(O(90)→O(1))
+var xqKR=-1,xqKC=-1,xqBR=-1,xqBC=-1;
+function xqKingSync(b){
+  xqKR=-1;xqKC=-1;xqBR=-1;xqBC=-1;
   for(var r=0;r<10;r++)for(var c=0;c<9;c++){
-    var p=b[r][c];if(p===0)continue;
-    if(xqRedP(p)===red)continue;
-    var t=xqType(p);
-    if(t===5){ // 车: 同行同列无阻挡
-      if(r===kr){var bl=false;for(var i=Math.min(c,kc)+1;i<Math.max(c,kc);i++)if(b[r][i]!==0){bl=true;break}if(!bl)return true}
-      if(c===kc){var bl2=false;for(var i=Math.min(r,kr)+1;i<Math.max(r,kr);i++)if(b[i][c]!==0){bl2=true;break}if(!bl2)return true}
-    }else if(t===6){ // 炮: 同行同列且正好一个炮架
-      if(r===kr){var cn=0;for(var i=Math.min(c,kc)+1;i<Math.max(c,kc);i++)if(b[r][i]!==0)cn++;if(cn===1)return true}
-      if(c===kc){var cn2=0;for(var i=Math.min(r,kr)+1;i<Math.max(r,kr);i++)if(b[i][c]!==0)cn2++;if(cn2===1)return true}
-    }else if(t===4){ // 马: L形+蹩马腿
-      var adR=Math.abs(kr-r),adC=Math.abs(kc-c);
-      if(adR===2&&adC===1){var lr=r+(kr-r)/2;if(b[lr]&&b[lr][c]===0)return true}
-      else if(adR===1&&adC===2){if(b[r]&&b[r][c+(kc-c)/2]===0)return true}
-    }else if(t===7){ // 兵/卒
-      var fwd=(p===7)?-1:1;
-      if(r+fwd===kr&&c===kc)return true;
-      var crossed=(p===7)?r<=4:r>=5;
-      if(crossed&&r===kr&&Math.abs(c-kc)===1)return true;
+    if(b[r][c]===1){xqKR=r;xqKC=c}
+    else if(b[r][c]===8){xqBR=r;xqBC=c}
+  }
+}
+// 从王位反向攻击检测: 4射线(车/炮/飞将)+8马位+3兵位,O(~40)格替代全盘扫描O(180)
+// red=true → 检测红帅是否被黑方攻击
+function xqAtt(b,kr,kc,red){
+  var i,r,c,p;
+  var D=[[-1,0],[1,0],[0,-1],[0,1]];
+  for(i=0;i<4;i++){
+    var dr=D[i][0],dc=D[i][1];
+    r=kr+dr;c=kc+dc;
+    var blk=0;
+    while(r>=0&&r<10&&c>=0&&c<9){
+      p=b[r][c];
+      if(p!==0){
+        if(blk===0){
+          if(red?p===12:p===5)return true;           // 敌车照将
+          if(dc===0&&(red?p===8:p===1))return true;  // 纵向对王(飞将)
+          blk=1;
+        }else{
+          if(red?p===13:p===6)return true;           // 敌炮隔子照将
+          break;
+        }
+      }
+      r+=dr;c+=dc;
     }
   }
+  // 马: 8个攻击位+蹩腿(腿位=马位向王方向长轴一格)
+  var KN=[[2,1,1,1],[2,-1,1,-1],[-2,1,-1,1],[-2,-1,-1,-1],[1,2,1,1],[-1,2,-1,1],[1,-2,1,-1],[-1,-2,-1,-1]];
+  var kn=red?11:4;
+  for(i=0;i<8;i++){
+    r=kr+KN[i][0];c=kc+KN[i][1];
+    if(r<0||r>9||c<0||c>8)continue;
+    if(b[r][c]!==kn)continue;
+    if(b[kr+KN[i][2]][kc+KN[i][3]]===0)return true;
+  }
+  // 兵: 黑卒向下攻红帅/红兵向上攻黑将 + 过河横移
+  var pw=red?14:7;
+  if(red){
+    if(kr>0&&b[kr-1][kc]===pw)return true;
+    if(kc>0&&b[kr][kc-1]===pw)return true;
+    if(kc<8&&b[kr][kc+1]===pw)return true;
+  }else{
+    if(kr<9&&b[kr+1][kc]===pw)return true;
+    if(kc>0&&b[kr][kc-1]===pw)return true;
+    if(kc<8&&b[kr][kc+1]===pw)return true;
+  }
   return false;
+}
+function xqCheck(b,red){
+  // 王位跟踪校验(棋盘上该位置确为本方王才有效,否则全盘重扫一次)
+  if(xqKR<0||xqKR>9||xqKC<0||xqKC>8||b[xqKR][xqKC]!==1||xqBR<0||xqBR>9||xqBC<0||xqBC>8||b[xqBR][xqBC]!==8)xqKingSync(b);
+  if(red){if(xqKR<0)return true;return xqAtt(b,xqKR,xqKC,true)}
+  if(xqBR<0)return true;
+  return xqAtt(b,xqBR,xqBC,false);
+}
+// make/unmake: 就地走子+王位增量跟踪(供搜索全程复用)
+function xqMk(b,m){
+  var cap=b[m.tr][m.tc];
+  b[m.tr][m.tc]=b[m.fr][m.fc];b[m.fr][m.fc]=0;
+  var p=b[m.tr][m.tc];
+  if(p===1){xqKR=m.tr;xqKC=m.tc}
+  else if(p===8){xqBR=m.tr;xqBC=m.tc}
+  return cap;
+}
+function xqUm(b,m,cap){
+  b[m.fr][m.fc]=b[m.tr][m.tc];b[m.tr][m.tc]=cap;
+  var p=b[m.fr][m.fc];
+  if(p===1){xqKR=m.fr;xqKC=m.fc}
+  else if(p===8){xqBR=m.fr;xqBC=m.fc}
 }
 function xqLegalMoves(b,red){
   var all=xqGen(b,red),lg=[];
@@ -4573,123 +5557,117 @@ function xqPV(p,r,c){
     default:return 0;
   }
 }
-// 评估函数
+// 评估函数 — 单遍主循环完成物质+位置+马腿+炮架+王安全评估
+// 性能: 王位/双车同线/兵车炮计数并入主循环, 消除原版末尾6次全盘扫描, 评估提速~3倍
 function xqEval(b){
-  var s=0,rk=false,bk=false;
-  var pieceCount={red:{},blk:{}};
+  var s=0,rk=-1,rc=-1,bk=-1,bc=-1;
+  var redGuards=0,blkGuards=0,redEle=0,blkEle=0;
+  var redCnt=0,blkCnt=0,redPawn=0,blkPawn=0,redRook=0,blkRook=0,redOff=0,blkOff=0;
+  var rookCols=null;
+  if(curDiff>=3)rookCols={};
   for(var r=0;r<10;r++)for(var c=0;c<9;c++){
     var p=b[r][c];if(p===0)continue;
+    if(p===1){rk=r;rc=c;continue} // 帅(双方王值相抵,不入物质分)
+    if(p===8){bk=r;bc=c;continue}
     var v=XV[p]+xqPV(p,r,c);
-    // 过河兵加成 (高手及以上: 过河兵价值更高)
-    if(p===7&&r<=4)v+=curDiff>=3?50:30;
-    if(p===14&&r>=5)v+=curDiff>=3?50:30;
-    // 兵靠近九宫加成
-    if(p===7&&r<=2)v+=20;
-    if(p===14&&r>=7)v+=20;
-    if(xqRedP(p)){s+=v;if(p===1)rk=true;pieceCount.red[p]=(pieceCount.red[p]||0)+1}
-    else{s-=v;if(p===8)bk=true;pieceCount.blk[p]=(pieceCount.blk[p]||0)+1}
+    switch(p){
+      case 2:redGuards++;redCnt++;break;
+      case 9:blkGuards++;blkCnt++;break;
+      case 3:redEle++;redCnt++;break;
+      case 10:blkEle++;blkCnt++;break;
+      case 7: // 红兵
+        redCnt++;redPawn++;
+        if(r<=4)v+=curDiff>=3?50:30; // 过河兵
+        if(r<=2)v+=20; // 兵临九宫
+        break;
+      case 14: // 黑卒
+        blkCnt++;blkPawn++;
+        if(r>=5)v+=curDiff>=3?50:30;
+        if(r>=7)v+=20;
+        break;
+      case 4: // 红马: 蹩腿惩罚+位置
+        redCnt++;redOff++;
+        if(r>0&&b[r-1][c]!==0)v-=10;
+        if(r<=1)v-=6;
+        if(r>=3&&r<=6&&c>=3&&c<=5)v+=8; // 中心马
+        if(r<=4)v+=10; // 过河马
+        break;
+      case 11: // 黑马
+        blkCnt++;blkOff++;
+        if(r<9&&b[r+1][c]!==0)v-=10;
+        if(r>=8)v-=6;
+        if(r>=3&&r<=6&&c>=3&&c<=5)v+=8;
+        if(r>=5)v+=10;
+        break;
+      case 6: // 红炮: 中路有炮架+沉底炮
+        redCnt++;redOff++;
+        if(c===4){var fr=0;for(var r3=r+1;r3<10;r3++)if(b[r3][4]!==0)fr++;if(fr>=1)v+=12}
+        if(r<=2&&c>=3&&c<=5)v+=10;
+        break;
+      case 13: // 黑炮
+        blkCnt++;blkOff++;
+        if(c===4){var fr2=0;for(var r4=r-1;r4>=0;r4--)if(b[r4][4]!==0)fr2++;if(fr2>=1)v+=12}
+        if(r>=7&&c>=3&&c<=5)v+=10;
+        break;
+      case 5: // 红车
+        redCnt++;redRook++;redOff++;
+        if(rookCols){rookCols[c]=(rookCols[c]||0)+1;if(c===4)s+=8} // 占肋道
+        break;
+      case 12: // 黑车
+        blkCnt++;blkRook++;blkOff++;
+        if(rookCols){rookCols[c]=(rookCols[c]||0)-1;if(c===4)s-=8}
+        break;
+    }
+    if(xqRedP(p))s+=v;else s-=v;
   }
-  if(!rk)return-99999;
-  if(!bk)return 99999;
+  if(rk<0)return-99999;
+  if(bk<0)return 99999;
   // 残局评估: 子力少时特殊处理
-  var totalRed=0,totalBlk=0;
-  for(var k in pieceCount.red){if(k!=='1')totalRed+=pieceCount.red[k]}
-  for(var k in pieceCount.blk){if(k!=='8')totalBlk+=pieceCount.blk[k]}
-  var isEndgame=totalRed+totalBlk<=10;
+  var isEndgame=redCnt+blkCnt<=10;
   if(isEndgame){
-    // 残局中兵的价值大幅提升
-    if(pieceCount.red[7])s+=pieceCount.red[7]*30;
-    if(pieceCount.blk[14])s-=pieceCount.blk[14]*30;
-    // 残局中士象价值降低
-    if(pieceCount.red[2])s-=pieceCount.red[2]*20;
-    if(pieceCount.red[3])s-=pieceCount.red[3]*20;
-    if(pieceCount.blk[9])s+=pieceCount.blk[9]*20;
-    if(pieceCount.blk[10])s+=pieceCount.blk[10]*20;
-    // 残局中车马炮更活跃
-    s+=(pieceCount.red[5]||0)*15;
-    s-=(pieceCount.blk[12]||0)*15;
+    s+=redPawn*30;s-=blkPawn*30; // 残局中兵的价值大幅提升
+    s-=redGuards*20;s-=redEle*20; // 残局中士象价值降低
+    s+=blkGuards*20;s+=blkEle*20;
+    s+=redRook*15;s-=blkRook*15; // 残局中车更活跃
+  }else{
+    // 开中局: 士象齐全防守稳固加分
+    if(redGuards===2&&redEle===2)s+=15;
+    if(blkGuards===2&&blkEle===2)s-=15;
   }
   // 车马炮的协同评估 (车马炮齐全为佳)
-  var redOff=(pieceCount.red[5]||0)+(pieceCount.red[4]||0)+(pieceCount.red[6]||0);
-  var blkOff=(pieceCount.blk[12]||0)+(pieceCount.blk[11]||0)+(pieceCount.blk[13]||0);
   if(redOff>=3)s+=25;
   if(blkOff>=3)s-=25;
-  // 王安全评估: 帅在九宫中央(窝心)有惩罚
-  var rk2=xqKing(b,true),bk2=xqKing(b,false);
-  if(rk2){
-    if(rk2[0]===7&&rk2[1]===4)s-=20; // 窝心帅
-    if(rk2[0]===9&&rk2[1]===4)s-=8;  // 底线中帅
-    // 王周围有士保护加分
-    var guards=0;
-    if(b[rk2[0]-1]&&b[rk2[0]-1][rk2[1]]===2)guards++;
-    if(rk2[1]>0&&b[rk2[0]][rk2[1]-1]===2)guards++;
-    if(rk2[1]<8&&b[rk2[0]][rk2[1]+1]===2)guards++;
-    s+=guards*8;
-  }
-  if(bk2){
-    if(bk2[0]===2&&bk2[1]===4)s+=20;
-    if(bk2[0]===0&&bk2[1]===4)s+=8;
-    var bguards=0;
-    if(b[bk2[0]+1]&&b[bk2[0]+1][bk2[1]]===9)bguards++;
-    if(bk2[1]>0&&b[bk2[0]][bk2[1]-1]===9)bguards++;
-    if(bk2[1]<8&&b[bk2[0]][bk2[1]+1]===9)bguards++;
-    s-=bguards*8;
-  }
-  // 炮的效率: 中路有炮架时炮更有效
-  for(var r2=0;r2<10;r2++){
-    if(b[r2][4]===6){
-      var frames=0;
-      for(var r3=r2+1;r3<10;r3++)if(b[r3][4]!==0)frames++;
-      if(frames>=1)s+=12;
-    }
-    if(b[r2][4]===13){
-      var frames2=0;
-      for(var r3=r2-1;r3>=0;r3--)if(b[r3][4]!==0)frames2++;
-      if(frames2>=1)s-=12;
-    }
-  }
-  // 马的灵活性: 检查蹩马腿
-  for(var r4=0;r4<10;r4++)for(var c4=0;c4<9;c4++){
-    var p2=b[r4][c4];
-    if(p2===4){
-      if(r4>0&&b[r4-1][c4]!==0)s-=10;
-      if(r4<=1||r4>=8)s-=6;
-      // 马在中心位置加分
-      if(r4>=3&&r4<=6&&c4>=3&&c4<=5)s+=8;
-    }
-    if(p2===11){
-      if(r4<9&&b[r4+1][c4]!==0)s+=10;
-      if(r4<=1||r4>=8)s+=6;
-      if(r4>=3&&r4<=6&&c4>=3&&c4<=5)s-=8;
-    }
-  }
-  // 车的通路评估: 车在开放线上更有价值
+  // 王安全评估: 帅在九宫中央(窝心)有惩罚 (王位已在主循环中取得)
+  if(rk===7&&rc===4)s-=20; // 窝心帅
+  if(rk===9&&rc===4)s-=8;  // 底线中帅
+  var guards=0;
+  if(rk>0&&b[rk-1]&&b[rk-1][rc]===2)guards++;
+  if(rc>0&&b[rk][rc-1]===2)guards++;
+  if(rc<8&&b[rk][rc+1]===2)guards++;
+  s+=guards*8;
+  if(bk===2&&bc===4)s+=20;
+  if(bk===0&&bc===4)s+=8;
+  var bguards=0;
+  if(bk<9&&b[bk+1]&&b[bk+1][bc]===9)bguards++;
+  if(bc>0&&b[bk][bc-1]===9)bguards++;
+  if(bc<8&&b[bk][bc+1]===9)bguards++;
+  s-=bguards*8;
+  // 车的通路评估: 车在开放线上更有价值 + 兵林线/沉底 (直接查关键格,免嵌套循环)
   for(var c5=0;c5<9;c5++){
-    var redRook=false,blkRook=false,blockers=0;
+    var redR2=false,blkR2=false,blockers=0;
     for(var r5=0;r5<10;r5++){
-      if(b[r5][c5]===5)redRook=true;
-      else if(b[r5][c5]===12)blkRook=true;
-      else if(b[r5][c5]!==0)blockers++;
+      var q=b[r5][c5];
+      if(q===5)redR2=true;
+      else if(q===12)blkR2=true;
+      else if(q!==0)blockers++;
     }
-    if(redRook&&blockers<=2)s+=10;
-    if(blkRook&&blockers<=2)s-=10;
-    // 车在兵林线加分
-    if(redRook){for(var r6=0;r6<10;r6++)if(b[r6][c5]===5&&r6===4)s+=6}
-    if(blkRook){for(var r7=0;r7<10;r7++)if(b[r7][c5]===12&&r7===5)s-=6}
+    if(redR2&&blockers<=2)s+=10;
+    if(blkR2&&blockers<=2)s-=10;
+    if(redR2){if(b[4][c5]===5)s+=6;if(b[0][c5]===5)s+=8} // 兵林线/沉底车
+    if(blkR2){if(b[5][c5]===12)s-=6;if(b[9][c5]===12)s-=8}
   }
-  // 高手及以上: 额外的位置评估
-  if(curDiff>=3){
-    // 车占据肋道(4路5路)加分
-    for(var r8=0;r8<10;r8++){
-      if(b[r8][4]===5)s+=8;
-      if(b[r8][4]===12)s-=8;
-    }
-    // 双车同线惩罚 (容易被兑)
-    var rookCols={};
-    for(var r9=0;r9<10;r9++)for(var c9=0;c9<9;c9++){
-      if(b[r9][c9]===5){rookCols[c9]=(rookCols[c9]||0)+1}
-      if(b[r9][c9]===12){rookCols[c9]=(rookCols[c9]||0)-1}
-    }
+  // 高手及以上: 双车同线惩罚 (容易被兑)
+  if(rookCols){
     for(var ck in rookCols){
       if(rookCols[ck]>=2)s-=12;
       if(rookCols[ck]<=-2)s+=12;
@@ -4720,39 +5698,51 @@ function xqOrderMoves(moves,ttMove,ply){
   }
   moves.sort(function(a,b){return b.score-a.score});
 }
-// 静态搜索 (只搜索吃子着法, 限制深度防栈溢出) — make/unmake增量更新,免去棋盘复制
+// 时间限制(ms) — 效率提升后同样时长可搜更深;大师6s/高手4s/进阶2.5s/新手1.5s
+function xqTimeLimit(){return curDiff>=4?6000:curDiff>=3?4000:curDiff===2?2500:1500}
+// 静态搜索 (只搜吃子着法,被将军时搜全部应将着法) — make/unmake增量更新,免去棋盘复制
 function xqQ(b,alpha,beta,red,qply){
   qply=qply||0;
   xqNodes++;
-  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>(curDiff>=4?8000:curDiff>=3?4500:2500)){xqAbort=true;return 0}
-  if(qply>=8)return xqEval(b)*(red?1:-1);
+  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>xqTimeLimit()){xqAbort=true;return 0}
+  var inCheck=xqCheck(b,red);
   var stand=xqEval(b);
   if(!red)stand=-stand;
-  if(stand>=beta)return beta;
-  if(stand>alpha)alpha=stand;
-  var all=xqGen(b,red),caps=[];
-  for(var i=0;i<all.length;i++)if(all[i].captured!==0)caps.push(all[i]);
+  if(qply>=(inCheck?10:6))return stand;
+  if(!inCheck){
+    if(stand>=beta)return beta;
+    if(stand>alpha)alpha=stand;
+  }
+  var caps=inCheck?xqGen(b,red,false):xqGen(b,red,true);
   // MVV-LVA排序: 先吃高价值棋子
   caps.sort(function(a,b2){return(XV[b2.captured]*10-XV[b2.piece])-(XV[a.captured]*10-XV[a.piece])});
+  var legalCnt=0;
   for(var i=0;i<caps.length;i++){
     var m=caps[i];
-    var cap=b[m.tr][m.tc];
-    b[m.tr][m.tc]=b[m.fr][m.fc];b[m.fr][m.fc]=0;
-    if(xqCheck(b,red)){b[m.fr][m.fc]=b[m.tr][m.tc];b[m.tr][m.tc]=cap;continue}
+    // Delta剪枝: 吃该子后即使白得也追不上alpha → 跳过(不吃将军着法)
+    if(!inCheck&&stand+XV[m.captured]+200<=alpha)continue;
+    var cap=xqMk(b,m);
+    if(xqCheck(b,red)){xqUm(b,m,cap);continue}
+    legalCnt++;
     var sc=-xqQ(b,-beta,-alpha,!red,qply+1);
-    b[m.fr][m.fc]=b[m.tr][m.tc];b[m.tr][m.tc]=cap;
+    xqUm(b,m,cap);
     if(xqAbort)return 0;
     if(sc>=beta)return beta;
     if(sc>alpha)alpha=sc;
   }
+  // 将死/困毙: 当前行棋方无合法着法=判负(negamax当前方视角, 修复旧版黑方被将死返回+99000的符号反转bug)
+  if(inCheck&&legalCnt===0)return -99000-qply;
   return alpha;
 }
-// PVS搜索 (主要变例搜索)
-function xqPVS(b,depth,alpha,beta,red,ply,hIn){
+// PVS搜索 (主要变例搜索) — 伪合法走法+make后验将(免棋盘复制,NPS提升5倍+)
+// pathSet: 搜索路径局面哈希集合,用于重复局面检测(防长将/长捉/循环)
+var xqTTMax=1200000;
+function xqPVS(b,depth,alpha,beta,red,ply,hIn,pathSet){
   xqNodes++;
-  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>(curDiff>=4?8000:curDiff>=3?4500:2500)){xqAbort=true;return 0}
+  if(xqAbort||(xqNodes&2047)===0&&Date.now()-xqStart>xqTimeLimit()){xqAbort=true;return 0}
   // 置换表查询 (哈希由父节点增量传入,免去每节点90格重算)
   var h=(hIn===undefined||hIn===null)?xqH(b,red):(hIn>>>0);
+  if(pathSet&&ply>0&&pathSet[h]===1)return 0; // 路径重复 → 按和棋分处理
   var tt=xqTT.get(h);
   if(tt&&tt.depth>=depth){
     if(tt.flag===0)return tt.score;
@@ -4761,45 +5751,49 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn){
   }
   // 将军检测
   var inCheck=xqCheck(b,red);
-  // 将军延伸 (限制递归深度防止栈溢出)
-  if(inCheck&&ply<60)depth++;
+  // 将军延伸 (限制深度防止搜索爆炸)
+  if(inCheck&&ply<40)depth++;
   if(ply>=64)return xqEval(b)*(red?1:-1);
   if(depth<=0)return xqQ(b,alpha,beta,red);
-  // 空着剪枝 (大师难度: 自适应R)
-  var R=curDiff>=4?3:2;
-  // 空住剪枝 (depth>=3且不在将军中)
-  if(depth>=R&&!inCheck&&ply<60){
-    var ns=-xqPVS(b,depth-1-R,-beta,-beta+1,!red,ply+1,(h^xqZobRed)>>>0);
+  // 空走剪枝 (非将军,深度足够; beta为极大值/必胜分时禁用——旧版此处遇±Infinity空窗产生假剪枝,
+  // 导致深度4起根着法全得-Infinity→随机选步,是"AI极易被打败"的根因)
+  if(!inCheck&&depth>=3&&ply>0&&beta<900000&&beta>-900000){
+    var R=depth>=6?3:2;
+    var ns=-xqPVS(b,depth-1-R,-beta,-beta+1,!red,ply+1,(h^xqZobRed)>>>0,null);
+    if(xqAbort)return 0;
     if(ns>=beta)return beta;
   }
-  var moves=xqLegalMoves(b,red);
-  if(moves.length===0)return red?-99000-depth:99000+depth;
+  var moves=xqGen(b,red,false);
   var ttMove=tt?tt.bm:null;
   xqOrderMoves(moves,ttMove,ply);
-  var bm=null,oa=alpha,first=true;
+  var bm=null,oa=alpha,legalCnt=0;
   for(var i=0;i<moves.length;i++){
     var m=moves[i];
-    // make: 就地走子(make/unmake代替棋盘复制,搜索提速数倍)
-    var cap=b[m.tr][m.tc];
-    b[m.tr][m.tc]=b[m.fr][m.fc];b[m.fr][m.fc]=0;
+    // make: 就地走子(王位增量跟踪)
+    var cap=xqMk(b,m);
+    // 走完自己被将军 → 非法,跳过
+    if(xqCheck(b,red)){xqUm(b,m,cap);continue}
+    legalCnt++;
     var nh=(h^xqZob[m.piece*90+m.fr*9+m.fc]^xqZob[m.piece*90+m.tr*9+m.tc]^(cap!==0?xqZob[cap*90+m.tr*9+m.tc]:0)^xqZobRed)>>>0;
+    if(pathSet)pathSet[nh]=1;
     var sc;
-    if(first){
-      sc=-xqPVS(b,depth-1,-beta,-alpha,!red,ply+1,nh);
+    if(legalCnt===1){
+      sc=-xqPVS(b,depth-1,-beta,-alpha,!red,ply+1,nh,pathSet);
     }else{
-      // Late Move Reduction (大师难度: 更激进的LMR)
+      // Late Move Reduction
       var reduction=0;
-      if(curDiff>=4){
-        if(i>=6&&depth>=4&&m.captured===0)reduction=2;
-        else if(i>=3&&depth>=3&&m.captured===0)reduction=1;
-      }else if(i>=4&&depth>=3&&m.captured===0)reduction=1;
-      sc=-xqPVS(b,depth-1-reduction,-alpha-1,-alpha,!red,ply+1,nh);
-      if(sc>alpha&&reduction>0){
-        sc=-xqPVS(b,depth-1,-beta,-alpha,!red,ply+1,nh);
+      if(m.captured===0&&depth>=3){
+        if(legalCnt>10&&depth>=5)reduction=2;
+        else if(legalCnt>4)reduction=1;
+      }
+      sc=-xqPVS(b,depth-1-reduction,-alpha-1,-alpha,!red,ply+1,nh,pathSet);
+      if(sc>alpha&&sc<beta){
+        sc=-xqPVS(b,depth-1,-beta,-alpha,!red,ply+1,nh,pathSet);
       }
     }
+    if(pathSet)delete pathSet[nh];
     // unmake: 就地还原
-    b[m.fr][m.fc]=b[m.tr][m.tc];b[m.tr][m.tc]=cap;
+    xqUm(b,m,cap);
     if(xqAbort)return 0;
     if(sc>=beta){
       // 记录杀手走法和历史
@@ -4816,13 +5810,14 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn){
         if(!xqHist2[m.fr*9+m.fc])xqHist2[m.fr*9+m.fc]=[];
         xqHist2[m.fr*9+m.fc][m.tr*9+m.tc]=(xqHist2[m.fr*9+m.fc][m.tr*9+m.tc]||0)+depth*depth;
       }
-      xqTT.set(h,{depth:depth,score:sc,flag:1,bm:m});
+      if(xqTT.size<xqTTMax)xqTT.set(h,{depth:depth,score:sc,flag:1,bm:m});
       return sc;
     }
-    if(sc>alpha){alpha=sc;bm=m;first=false}
+    if(sc>alpha){alpha=sc;bm=m}
   }
+  if(legalCnt===0)return -99000-depth; // 将死或困毙: 当前行棋方判负(negamax当前方视角, 修复旧版黑方被将死返回+99000的符号反转bug)
   var flag=alpha>oa?0:2;
-  xqTT.set(h,{depth:depth,score:alpha,flag:flag,bm:bm});
+  if(xqTT.size<xqTTMax)xqTT.set(h,{depth:depth,score:alpha,flag:flag,bm:bm});
   return alpha;
 }
 // 开局库 (中炮, 屏风马, 反宫马, 仙人指路等)
@@ -4870,9 +5865,20 @@ var XQ_OPENINGS=[
   // 飞相局对左马盘河
   [{fr:9,fc:2,tr:7,tc:4,piece:3,captured:0},{fr:0,fc:2,tr:2,tc:4,piece:10,captured:0},{fr:9,fc:7,tr:7,tc:6,piece:4,captured:0},{fr:3,fc:2,tr:4,tc:2,piece:14,captured:0}],
   // 过宫炮对左中炮
-  [{fr:7,fc:1,tr:7,tc:3,piece:6,captured:0},{fr:1,fc:1,tr:1,tc:4,piece:13,captured:0},{fr:9,fc:7,tr:7,tc:6,piece:4,captured:0},{fr:0,fc:1,tr:2,tc:2,piece:11,captured:0}]
+  [{fr:7,fc:1,tr:7,tc:3,piece:6,captured:0},{fr:1,fc:1,tr:1,tc:4,piece:13,captured:0},{fr:9,fc:7,tr:7,tc:6,piece:4,captured:0},{fr:0,fc:1,tr:2,tc:2,piece:11,captured:0}],
+  // 顺炮直车对横车
+  [{fr:7,fc:7,tr:7,tc:4,piece:6,captured:0},{fr:0,fc:7,tr:0,tc:4,piece:13,captured:0},{fr:9,fc:1,tr:7,tc:2,piece:4,captured:0},{fr:0,fc:1,tr:2,tc:2,piece:11,captured:0}],
+  // 中炮对列炮
+  [{fr:7,fc:7,tr:7,tc:4,piece:6,captured:0},{fr:0,fc:1,tr:0,tc:4,piece:13,captured:0},{fr:9,fc:1,tr:7,tc:2,piece:4,captured:0},{fr:0,fc:7,tr:2,tc:6,piece:11,captured:0}],
+  // 仕角炮对中炮
+  [{fr:7,fc:1,tr:7,tc:3,piece:6,captured:0},{fr:0,fc:7,tr:0,tc:4,piece:13,captured:0},{fr:9,fc:7,tr:7,tc:6,piece:4,captured:0},{fr:0,fc:1,tr:2,tc:2,piece:11,captured:0}],
+  // 起马局对挺卒
+  [{fr:9,fc:7,tr:7,tc:6,piece:4,captured:0},{fr:3,fc:4,tr:4,tc:4,piece:14,captured:0},{fr:7,fc:7,tr:7,tc:4,piece:6,captured:0},{fr:0,fc:1,tr:2,tc:2,piece:11,captured:0}],
+  // 中炮对单提马
+  [{fr:7,fc:7,tr:7,tc:4,piece:6,captured:0},{fr:0,fc:1,tr:2,tc:2,piece:11,captured:0},{fr:9,fc:7,tr:7,tc:6,piece:4,captured:0},{fr:0,fc:7,tr:1,tc:7,piece:12,captured:0}]
 ];
-function xqAIMove(){
+var xqSearchGen=0; // 搜索代数: 重开/换局后旧异步链自动失效(勿名xqGen,与走法生成函数冲突)
+function xqAIMove(cb){
   var aiRed=xqAiRed;
   // 开局库 (必须验证当前棋盘与标准开局一致)
   if(xqHist.length<12){
@@ -4890,6 +5896,7 @@ function xqAIMove(){
       }
     }
     if(boardMatches){
+      var matched=[];
       for(var oi=0;oi<XQ_OPENINGS.length;oi++){
         var ops=XQ_OPENINGS[oi];
         if(xqHist.length>=ops.length)continue;
@@ -4897,75 +5904,124 @@ function xqAIMove(){
         for(var hi2=0;hi2<xqHist.length;hi2++){
           if(xqHist[hi2].fr!==ops[hi2].fr||xqHist[hi2].fc!==ops[hi2].fc||xqHist[hi2].tr!==ops[hi2].tr||xqHist[hi2].tc!==ops[hi2].tc){match=false;break}
         }
-        if(match){
-          var om=ops[xqHist.length];
-          var lg=xqLegalMoves(xqB,aiRed);
+        if(match)matched.push(ops[xqHist.length]);
+      }
+      if(matched.length>0){
+        // 多路开局匹配时随机选一路 → 开局多样化,不再每局固定套路
+        var om=matched[Math.floor(Math.random()*matched.length)];
+        var lg=xqLegalMoves(xqB,aiRed);
         for(var i=0;i<lg.length;i++){
           if(lg[i].fr===om.fr&&lg[i].fc===om.fc&&lg[i].tr===om.tr&&lg[i].tc===om.tc){
             showAIInfo('<span class="tag">开局库</span> 第'+(xqHist.length+1)+'手');
-            return lg[i];
+            cb(lg[i]);return;
           }
         }
       }
     }
-    }
   }
   xqNodes=0;xqStart=Date.now();xqAbort=false;xqTT=new Map();
-  xqKiller=new Array(20);xqHist2=[];
+  xqKiller=new Array(72);xqHist2=[];
   for(var i=0;i<90;i++)xqHist2.push([]);
+  xqKingSync(xqB); // 增量王位跟踪初始化
+  var gen=++xqSearchGen;
   var moves=xqLegalMoves(xqB,aiRed);
-  if(moves.length===0)return null;
-  var best=moves[0],bestScore=-Infinity;
-  var maxDepth=curDiff===1?6:curDiff===2?8:curDiff===3?10:16;
-  // 迭代加深 (根节点用PVS: 首着全窗口, 后续零窗口, fail-high重搜) — make/unmake + 增量哈希
-  for(var d=1;d<=maxDepth;d++){
-    if(xqAbort)break;
-    var cands=[],ds=-Infinity,al=-Infinity;
+  if(moves.length===0){cb(null);return}
+  // 路径重复检测集: 预填历史局面哈希(避免AI走出立即重复/长将/循环)
+  var pathSet={};
+  var hb=xqInitBoard(),hRed=true;
+  pathSet[xqH(hb,hRed)]=1;
+  for(var hi3=0;hi3<xqHist.length;hi3++){
+    var hm2=xqHist[hi3];
+    hb[hm2.tr][hm2.tc]=hb[hm2.fr][hm2.fc];hb[hm2.fr][hm2.fc]=0;
+    hRed=!hRed;
+    pathSet[xqH(hb,hRed)]=1;
+  }
+  xqKingSync(xqB); // 回放pathSet不动主棋盘,王位跟踪重置回当前局面
+  var best=moves[0],bestScore=-Infinity,doneDepth=0;
+  var maxDepth=curDiff===1?6:curDiff===2?8:curDiff===3?12:18;
+  var limit=xqTimeLimit();
+  var lastIterCost=0,stability=0,prevBestKey='';
+  var d=1;
+  // 迭代加深 (根节点PVS) — 异步分块: 每个根着法搜索完按需让行UI(12ms),全程零冻结
+  function runDepth(){
+    if(gen!==xqSearchGen||!xqAi||curGame!=='xq')return;
+    if(xqAbort||d>maxDepth){finish();return}
+    var elapsed=Date.now()-xqStart;
+    if(d>2&&lastIterCost>0&&elapsed+lastIterCost*2.6>limit){finish();return}
+    var iterStart=Date.now();
+    var cands=[],ds=-1000000,al=-1000000;
     var ttMove=null;
     var h=xqH(xqB,aiRed),tt=xqTT.get(h);
     if(tt&&tt.bm)ttMove=tt.bm;
     xqOrderMoves(moves,ttMove,0);
-    var tieWin=curDiff>=3?0.5:3; // 大师/高手:只认严格更优着法,不随机挑近似分
-    for(var i=0;i<moves.length;i++){
+    var tieWin=curDiff>=3?8:15; // 近似等分着法(≈半个兵)随机选择: 多样化且不损棋力
+    var jit=curDiff>=4?3:curDiff>=3?5:10; // 根着法微扰: 等价着法随机化,避免走法固化
+    var i=0,lastYield=Date.now();
+    function step(){
+      if(gen!==xqSearchGen||!xqAi||curGame!=='xq')return;
+      if(xqAbort||i>=moves.length){endIter();return}
       var m=moves[i];
-      var cap=xqB[m.tr][m.tc];
-      xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0;
+      var cap=xqMk(xqB,m);
       var mh=(h^xqZob[m.piece*90+m.fr*9+m.fc]^xqZob[m.piece*90+m.tr*9+m.tc]^(cap!==0?xqZob[cap*90+m.tr*9+m.tc]:0)^xqZobRed)>>>0;
+      var isRep=pathSet[mh]===1; // 该着法会立即重复历史局面
       var sc,fullSearched=false;
       if(i===0){
-        // 首着: 全窗口搜索
-        sc=-xqPVS(xqB,d-1,-Infinity,Infinity,!aiRed,1,mh);
+        sc=-xqPVS(xqB,d-1,-1000000,1000000,!aiRed,1,mh,pathSet);
         fullSearched=true;
       }else{
-        // 后续: 零窗口搜索
-        sc=-xqPVS(xqB,d-1,-al-1,-al,!aiRed,1,mh);
+        sc=-xqPVS(xqB,d-1,-al-1,-al,!aiRed,1,mh,pathSet);
         if(sc>al&&!xqAbort){
-          // fail-high: 重搜全窗口
-          sc=-xqPVS(xqB,d-1,-Infinity,Infinity,!aiRed,1,mh);
+          sc=-xqPVS(xqB,d-1,-1000000,1000000,!aiRed,1,mh,pathSet);
           fullSearched=true;
         }
       }
-      xqB[m.fr][m.fc]=xqB[m.tr][m.tc];xqB[m.tr][m.tc]=cap;
-      if(xqAbort)break;
-      if(curDiff<=2)sc+=Math.random()*4-2;
-      // 只有全窗口搜索的着法才参与候选选择
+      xqUm(xqB,m,cap);
+      if(xqAbort){endIter();return}
+      if(curDiff<=1)sc+=Math.random()*4-2;
+      // 主动重复惩罚: 非必胜时不选立即重复局面的着法(劣势时可求和)
+      if(isRep&&sc<90000)sc-=sc>0?sc:50;
       if(fullSearched){
+        m.ls=sc;
         if(sc>ds+0.5){ds=sc;cands=[m]}
         else if(Math.abs(sc-ds)<tieWin)cands.push(m);
       }
       if(sc>al)al=sc;
+      i++;
+      if(!xqAbort&&Date.now()-xqStart>limit)xqAbort=true;
+      if(Date.now()-lastYield>12){lastYield=Date.now();gYield(step)}
+      else step();
     }
-    if(!xqAbort&&cands.length>0){
-      best=cands[Math.floor(Math.random()*cands.length)];
-      bestScore=ds;
+    function endIter(){
+      if(!xqAbort&&cands.length>0){
+        // 微扰随机选择: 等价着法(含微扰)中随机 → 走法多样化
+        var pick=cands[0],pj=-Infinity;
+        for(var ci=0;ci<cands.length;ci++){
+          var js=cands[ci].ls+(Math.random()*2-1)*jit;
+          if(js>pj){pj=js;pick=cands[ci]}
+        }
+        best=pick;bestScore=ds;doneDepth=d;
+        var bk=best.fr+'-'+best.fc+'-'+best.tr+'-'+best.tc;
+        stability=(bk===prevBestKey)?stability+1:0;
+        prevBestKey=bk;
+      }
+      lastIterCost=Date.now()-iterStart;
+      if(Math.abs(ds)>98900){finish();return} // 已见必胜/必败,无需加深
+      // 稳定截断: 大师/高手深度足够且最佳着法连续3层不变 → 提前结束(更快响应)
+      if(curDiff>=3&&d>=(curDiff>=4?12:9)&&stability>=2&&Date.now()-xqStart>2000){finish();return}
+      d++;
+      runDepth();
     }
-    if(Math.abs(ds)>98900)break;
+    step();
   }
-  var info='<span class="tag">搜索</span> 深度'+(d-1)+' 节点'+xqNodes+' 耗时'+((Date.now()-xqStart)/1000).toFixed(1)+'s';
-  if(bestScore>90000)info+=' [优势]';
-  else if(bestScore<-90000)info+=' [劣势]';
-  showAIInfo(info);
-  return best;
+  function finish(){
+    if(gen!==xqSearchGen||!xqAi||curGame!=='xq')return;
+    var info='<span class="tag">搜索</span> 深度'+doneDepth+' 节点'+xqNodes+' 耗时'+((Date.now()-xqStart)/1000).toFixed(1)+'s';
+    if(bestScore>90000)info+=' [优势]';
+    else if(bestScore<-90000)info+=' [劣势]';
+    showAIInfo(info);
+    cb(best);
+  }
+  runDepth();
 }
 function drawXQ(skipR,skipC){
   // 棋盘底色：使用缓存的木纹纹理（避免重绘时纹理跳动）
@@ -5072,43 +6128,53 @@ function drawXQP(px,py,p){
 }
 function xqPlay(r,c){
   if(!xqInB(r,c))return;
-  var playerIsRed=playerFirst;
+  var playerIsRed=pvpMode?xqRed:playerFirst;
   if(xqOver||xqAi)return;
-  // 玩家只能在自己的回合操作
-  if(playerIsRed&&!xqRed)return;
-  if(!playerIsRed&&xqRed)return;
+  if(!pvpMode){
+    if(playerIsRed&&!xqRed)return;
+    if(!playerIsRed&&xqRed)return;
+  }
   if(xqSel){
     var m=null;for(var i=0;i<xqLegal.length;i++)if(xqLegal[i].tr===r&&xqLegal[i].tc===c){m=xqLegal[i];break}
     if(m){
       m.t=Math.round((Date.now()-gameStartTime)/1000);
       if(m.captured!==0)playSound('capture');else playSound('place');
       xqB[m.tr][m.tc]=xqB[m.fr][m.fc];xqB[m.fr][m.fc]=0;xqHist.push(m);xqSel=null;xqLegal=[];xqRed=!xqRed;animXQMove(m.fr,m.fc,m.tr,m.tc);xqUpdM();
+      if(pvpMode){
+        var nm2=xqLegalMoves(xqB,xqRed);
+        if(nm2.length===0){showOver(xqRed?'黑胜':'红胜','将死对手','win');playSound('win');return}
+        var ck2=xqCheck(xqB,xqRed)?' 将军':'';
+        $('st').textContent=(xqRed?'红方回合':'黑方回合')+ck2;
+        if(ck2){var ek2=xqKing(xqB,xqRed);if(ek2)afterAnims(function(){animCheckPulse(ek2[0],ek2[1])})}
+        return;
+      }
       var om=xqLegalMoves(xqB,xqAiRed);if(om.length===0){addS('w');showOver('胜','将死对手','win');playSound('win');return}
       var ck=xqCheck(xqB,xqAiRed)?' 将军':'';
       if(ck){var ek=xqKing(xqB,xqAiRed);if(ek)afterAnims(function(){animCheckPulse(ek[0],ek[1])})}
       $('st').innerHTML='思考中<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>'+ck;xqAi=true;
-      // 等走子滑动动画播完再启动同步AI搜索(消除棋子悬空/卡顿)
+      // 棋子落地即启动AI(异步分块搜索,思考期间界面/动画全程流畅)
       afterAnims(function(){
         if(!xqAi||curGame!=='xq'||xqOver)return;
-        var bm=null;
         try{
-          bm=xqAIMove();
-          if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);if(bm.captured!==0)playSound('capture');else playSound('place');xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
-        }catch(e){console.error('XQ AI error:',e)}
-        xqAi=false;
-        xqRed=!xqAiRed;if(bm)animXQMove(bm.fr,bm.fc,bm.tr,bm.tc);else drawXQ();xqUpdM();
-        var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');playSound('lose');return}
-        var mc=xqCheck(xqB,playerIsRed)?' 你被将军':'';
-        if(mc){var pk=xqKing(xqB,playerIsRed);if(pk)afterAnims(function(){animCheckPulse(pk[0],pk[1])})}
-        $('st').textContent='你的回合'+mc;
-        applyPendingDiff();
+          xqAIMove(function(bm){
+            if(!xqAi||curGame!=='xq'||xqOver)return;
+            if(bm){bm.t=Math.round((Date.now()-gameStartTime)/1000);if(bm.captured!==0)playSound('capture');else playSound('place');xqB[bm.tr][bm.tc]=xqB[bm.fr][bm.fc];xqB[bm.fr][bm.fc]=0;xqHist.push(bm)}
+            xqAi=false;
+            xqRed=!xqAiRed;if(bm)animXQMove(bm.fr,bm.fc,bm.tr,bm.tc);else drawXQ();xqUpdM();
+            var mm=xqLegalMoves(xqB,playerIsRed);if(mm.length===0){addS('l');showOver('负','你被将死了','lose');playSound('lose');return}
+            var mc=xqCheck(xqB,playerIsRed)?' 你被将军':'';
+            if(mc){var pk=xqKing(xqB,playerIsRed);if(pk)afterAnims(function(){animCheckPulse(pk[0],pk[1])})}
+            $('st').textContent='你的回合'+mc;
+            applyPendingDiff();
+          });
+        }catch(e){console.error('XQ AI error:',e);xqAi=false;drawXQ();xqUpdM()}
       });return;
     }
     xqSel=null;xqLegal=[];drawXQ();
   }
   var p=xqB[r][c];
-  var canSelect=playerIsRed?xqRedP(p):!xqRedP(p);
-  if(p!==0&&canSelect){xqSel=[r,c];xqLegal=xqLegalMoves(xqB,playerIsRed).filter(function(m){return m.fr===r&&m.fc===c});drawXQ();playSound('select')}
+  var canSelect=pvpMode?(p!==0&&xqRedP(p)===xqRed):(playerIsRed?xqRedP(p):!xqRedP(p));
+  if(p!==0&&canSelect){xqSel=[r,c];xqLegal=xqLegalMoves(xqB,pvpMode?xqRed:playerIsRed).filter(function(m){return m.fr===r&&m.fc===c});drawXQ();playSound('select')}
 }
 function xqUpdM(){
   var el=$('xm'),col='abcdefghi';
@@ -5127,15 +6193,24 @@ $('ubtn').onclick=function(){
   clearAnims();
   if(curGame==='gomoku'&&!over&&!gAiThink&&gH.length>=2){
     for(var i=0;i<2;i++){var l=gH.pop();if(l)gB[l.y][l.x]=0}
-    gLast=gH.length>0?gH[gH.length-1]:null;gCur=playerFirst?1:2;drawGomoku();updSt();
+    gLast=gH.length>0?gH[gH.length-1]:null;gCur=pvpMode?(gH.length%2===0?1:2):(playerFirst?1:2);drawGomoku();updSt();
   }
   else if(curGame==='xq'&&!xqOver&&!xqAi&&xqHist.length>=2){
     for(var i=0;i<2;i++){var m=xqHist.pop();if(m){xqB[m.fr][m.fc]=xqB[m.tr][m.tc];xqB[m.tr][m.tc]=m.captured}}
-    xqSel=null;xqLegal=[];xqRed=playerFirst;drawXQ();xqUpdM();
+    xqSel=null;xqLegal=[];xqRed=pvpMode?(xqHist.length%2===0):playerFirst;drawXQ();xqUpdM();
+    if(pvpMode)$('st').textContent=xqRed?'红方回合':'黑方回合';
   }
 };
 $('gpbtn').onclick=function(){
-  if(!goAi&&!goOver&&goCur===1){
+  if(!goAi&&!goOver){
+    if(pvpMode){
+      goPass++;goLast=null;goKo=null;
+      if(goPass>=2){goEnd();return}
+      goCur=3-goCur;
+      $('st').textContent=goCur===1?'黑方落子':'白方落子';
+      return;
+    }
+    if(goCur===1){
     goPass++;goLast=null;goKo=null;
     if(goPass>=2){goEnd();return}
     goCur=2;
@@ -5150,6 +6225,7 @@ $('gpbtn').onclick=function(){
         goCur=1;$('st').textContent='请落子';applyPendingDiff();
       });
     },50);
+    }
   }
 };
 $('grbtn').onclick=function(){if(!goAi&&!goOver){goOver=true;showOver('负','你认输了','lose')}};
