@@ -3440,6 +3440,20 @@ function gFivePts(b,p){
   }
   return pts;
 }
+// 单次候选遍历同时求攻守双方成五点(VCF/VCT热路径: 省一次gCands全扫+循环开销)
+// 注意: 双五点(同一点对双方都是成五点)必须同时计入两侧, 否则误判冲四有效→幻觉杀
+function gDualFive(b,pA){
+  var pD=3-pA,aPts=[],dPts=[],cs=gCands(b,1);
+  for(var i=0;i<cs.length;i++){
+    var x=cs[i].x,y=cs[i].y;
+    b[y][x]=pA;var wa=gCheckWin(b,x,y,pA);
+    b[y][x]=pD;var wd=gCheckWin(b,x,y,pD);
+    b[y][x]=0;
+    if(wa)aPts.push({x:x,y:y});
+    if(wd)dPts.push({x:x,y:y});
+  }
+  return{a:aPts,d:dPts};
+}
 // VCF连续冲四杀 (严格正确版):
 // 攻方只走冲四/活四; 守方唯一有效防守=堵成五点(反四无效:攻方下一手直接连五)
 // 守方若有立即成五点→攻方冲四作废; 活四(双成五点)不可挡=必胜
@@ -3470,10 +3484,10 @@ function gVCF(b,attacker,depth){
   for(i=0;i<fours.length;i++){
     var m=fours[i];
     b[m.y][m.x]=attacker;
-    // 守方还能立即成五? → 此冲四作废
-    var ofs=gFivePts(b,opp);
-    if(ofs.length===0){
-      var mf=gFivePts(b,attacker);
+    // 守方还能立即成五? → 此冲四作废 (攻守成五点一次遍历同时求出)
+    var dfv=gDualFive(b,attacker);
+    if(dfv.d.length===0){
+      var mf=dfv.a;
       if(mf.length>=2){b[m.y][m.x]=0;return m} // 活四必胜
       if(mf.length===1){
         var d=mf[0]; // 冲四唯一防点
@@ -3522,9 +3536,9 @@ function gVCT(b,attacker,depth){
   for(i=0;i<tms.length;i++){
     var m=tms[i];
     b[m.y][m.x]=attacker;
-    var ofs=gFivePts(b,opp);
-    if(ofs.length===0){
-      var mf=gFivePts(b,attacker);
+    var dfv=gDualFive(b,attacker); // 攻守成五点一次遍历求出
+    if(dfv.d.length===0){
+      var mf=dfv.a;
       if(mf.length>=2){b[m.y][m.x]=0;return m}
       if(mf.length===1){
         var d=mf[0]; // 冲四: 守方唯一防点
@@ -3591,9 +3605,13 @@ function gAlphaBeta(b,depth,alpha,beta,maxP,aiP,huP,ply,hIn){
   var h=(hIn===undefined||hIn===null)?gHash(b):(hIn>>>0);
   var tt=gTT[h%gTTSize];
   if(tt&&tt.h===h&&tt.mp===maxP&&tt.depth>=depth){
-    if(tt.flag===0)return tt.score;
-    if(tt.flag===1&&tt.score>=beta)return tt.score;
-    if(tt.flag===2&&tt.score<=alpha)return tt.score;
+    // 杀棋分ply归一化: 胜利分900000+剩余深度*100是距根语义, 跨层取出须按当前ply校正,
+    // 否则同局面在不同路径下取出的分数错位数个ply→残局杀棋判断失真
+    var tsc=tt.score;
+    if(tsc>800000)tsc-=ply*100;else if(tsc<-800000)tsc+=ply*100;
+    if(tt.flag===0)return tsc;
+    if(tt.flag===1&&tsc>=beta)return tsc;
+    if(tt.flag===2&&tsc<=alpha)return tsc;
   }
   if(depth===0)return gEvalBoard(aiP,huP);
   var cs=gCands(b,1);
@@ -3660,13 +3678,15 @@ function gAlphaBeta(b,depth,alpha,beta,maxP,aiP,huP,ply,hIn){
     if(sc>=beta){
       if(!maxP){gKiller[ply]={x:x,y:y}}
       gHistory[y*GS+x]=(gHistory[y*GS+x]||0)+extDepth*extDepth;
-      gTT[h%gTTSize]={h:h,mp:maxP,depth:extDepth,score:sc,flag:1,bm:{x:x,y:y}};
+      var ss=sc;if(ss>800000)ss+=ply*100;else if(ss<-800000)ss-=ply*100; // 入表转节点相对语义
+      gTT[h%gTTSize]={h:h,mp:maxP,depth:extDepth,score:ss,flag:1,bm:{x:x,y:y}};
       return sc;
     }
     if(sc>alpha){alpha=sc;bm={x:x,y:y};first=false}
   }
   var flag=first?2:0;
-  gTT[h%gTTSize]={h:h,mp:maxP,depth:extDepth,score:alpha,flag:flag,bm:bm};
+  var sa=alpha;if(sa>800000)sa+=ply*100;else if(sa<-800000)sa-=ply*100; // 同上
+  gTT[h%gTTSize]={h:h,mp:maxP,depth:extDepth,score:sa,flag:flag,bm:bm};
   return alpha;
 }
 
@@ -3902,7 +3922,7 @@ function gAIMove(cb){
       if(gAbort||gen!==gGen||!gAiThink||curGame!=='gomoku'){finish();return}
       top.sort(function(a,c){return(c.ls||-Infinity)-(a.ls||-Infinity)}); // 上层得分重排根着法,下一迭代更快命中最佳
       if(Date.now()-gStart>gTimeLimit*0.5){gAbort=true;finish();return} // 剩余预算不足以完成更深一层
-      id+=2;
+      id+=1; // 步进1: TT杀棋分已做ply归一化,奇数深度可用,战术精度更细
       runIter();
     }
     step();
@@ -4339,6 +4359,7 @@ function goRCompact(){
   goRAtariN=w;
 }
 function goRLibAdd(g,q){
+  if(goROvf[g])return; // 已溢出: 记录表无意义, 免O(64)重复扫描
   var base=g*GO_MAXL,c=goRLibC[g],L=goRLibs;
   for(var i=0;i<c;i++)if(L[base+i]===q)return;
   if(c<GO_MAXL){L[base+c]=q;goRLibC[g]=c+1}
@@ -4374,19 +4395,20 @@ function goRRebuildG(g,ex){
 }
 // 落子: 返回 -2=非法(占用/劫/自杀) / -1=成功无劫 / >=0=成功且劫点
 function goRPlay(p,c,koPos){
-  if(goRB[p]!==0||p===koPos)return -2;
+  var RB=goRB,ID=goRId,NXT=goRNext,HEAD=goRHead,LB=goRLibs,LC=goRLibC,GC=goRGCol,OV=goROvf,MK=goRMark,CM=goRCapM,SCR=goRScr; // 热路径局部别名(数组仅原地修改)
+  if(RB[p]!==0||p===koPos)return -2;
   var opp=3-c;
   var st=++goRStamp;
   var Sg=goRPSg,Eg=goRPEg,sN=0,eN=0;
   var nb=goRNbF,nn=goRNbN[p],pb=p*4;
   for(var i=0;i<nn;i++){
-    var n=nb[pb+i],v=goRB[n];
+    var n=nb[pb+i],v=RB[n];
     if(v===c){
-      var g=goRId[n];
-      if(goRMark[g]!==st){goRMark[g]=st;Sg[sN++]=g}
+      var g=ID[n];
+      if(MK[g]!==st){MK[g]=st;Sg[sN++]=g}
     }else if(v===opp){
-      var g2=goRId[n];
-      if(goRMark[g2]!==st){goRMark[g2]=st;Eg[eN++]=g2}
+      var g2=ID[n];
+      if(MK[g2]!==st){MK[g2]=st;Eg[eN++]=g2}
     }
   }
   // 敌组减p气, 收集死组(气清零且无溢出时才确认死)
@@ -4394,30 +4416,30 @@ function goRPlay(p,c,koPos){
   for(var i2=0;i2<eN;i2++){
     var eg=Eg[i2];
     goRLibDel(eg,p);goRUpdAtari(eg);
-    if(goRLibC[eg]===0&&goROvf[eg]){
+    if(LC[eg]===0&&OV[eg]){
       goRRebuildG(eg,p);goRUpdAtari(eg);
-      if(goRLibC[eg]===0)Dead[dN++]=eg;
-    }else if(goRLibC[eg]===0)Dead[dN++]=eg;
+      if(LC[eg]===0)Dead[dN++]=eg;
+    }else if(LC[eg]===0)Dead[dN++]=eg;
   }
   // 标记提子点(暂不执行)
   var capSt=++goRCapSt,caps=goRPCaps,capN=0;
   for(var i3=0;i3<dN;i3++){
-    var m=goRHead[Dead[i3]];
-    while(m>=0){goRCapM[m]=capSt;caps[capN++]=m;m=goRNext[m]}
+    var m=HEAD[Dead[i3]];
+    while(m>=0){CM[m]=capSt;caps[capN++]=m;m=NXT[m]}
   }
   // 自杀判定(提交前): 新气 = ∪Sg气-{p} ∪ p邻(空或提子点)
   var sSt=++goRStamp,cnt=0,ovf=false;
   for(var i4=0;i4<sN;i4++){
-    var gb=Sg[i4]*GO_MAXL,gc=goRLibC[Sg[i4]];
+    var gb=Sg[i4]*GO_MAXL,gc=LC[Sg[i4]];
     for(var k=0;k<gc;k++){
-      var q=goRLibs[gb+k];
-      if(q!==p&&goRScr[q]!==sSt){goRScr[q]=sSt;cnt++}
+      var q=LB[gb+k];
+      if(q!==p&&SCR[q]!==sSt){SCR[q]=sSt;cnt++}
     }
-    if(goROvf[Sg[i4]])ovf=true;
+    if(OV[Sg[i4]])ovf=true;
   }
   for(var i5=0;i5<nn;i5++){
-    var n2=nb[pb+i5],v2=goRB[n2];
-    if((v2===0||goRCapM[n2]===capSt)&&goRScr[n2]!==sSt){goRScr[n2]=sSt;cnt++}
+    var n2=nb[pb+i5],v2=RB[n2];
+    if((v2===0||CM[n2]===capSt)&&SCR[n2]!==sSt){SCR[n2]=sSt;cnt++}
   }
   if(cnt===0){
     if(ovf){ // 溢出导致低估: 重建Sg组气重算
@@ -4425,15 +4447,15 @@ function goRPlay(p,c,koPos){
       for(var i6=0;i6<sN;i6++)goRRebuildG(Sg[i6],p);
       var sSt2=++goRStamp;
       for(var i7=0;i7<sN;i7++){
-        var gb2=Sg[i7]*GO_MAXL,gc2=goRLibC[Sg[i7]];
+        var gb2=Sg[i7]*GO_MAXL,gc2=LC[Sg[i7]];
         for(var k2=0;k2<gc2;k2++){
-          var q2=goRLibs[gb2+k2];
-          if(q2!==p&&goRScr[q2]!==sSt2){goRScr[q2]=sSt2;cnt++}
+          var q2=LB[gb2+k2];
+          if(q2!==p&&SCR[q2]!==sSt2){SCR[q2]=sSt2;cnt++}
         }
       }
       for(var i8=0;i8<nn;i8++){
-        var n3=nb[pb+i8],v3=goRB[n3];
-        if((v3===0||goRCapM[n3]===capSt)&&goRScr[n3]!==sSt2){goRScr[n3]=sSt2;cnt++}
+        var n3=nb[pb+i8],v3=RB[n3];
+        if((v3===0||CM[n3]===capSt)&&SCR[n3]!==sSt2){SCR[n3]=sSt2;cnt++}
       }
     }
     if(cnt===0){
@@ -4442,21 +4464,21 @@ function goRPlay(p,c,koPos){
     }
   }
   // 执行提子(清邻近标记: 被提点重回候选集)
-  for(var i10=0;i10<capN;i10++){var q3=caps[i10];goRB[q3]=0;goRId[q3]=-1;goRNear[q3]=0}
+  for(var i10=0;i10<capN;i10++){var q3=caps[i10];RB[q3]=0;ID[q3]=-1;goRNear[q3]=0}
   for(var i11=0;i11<dN;i11++)goRFree(Dead[i11]);
   // 提子点成为邻组的新气
   for(var i12=0;i12<capN;i12++){
     var q4=caps[i12],qb=q4*4,qn=goRNbN[q4];
     for(var j=0;j<qn;j++){
       var n4=nb[qb+j];
-      if(goRB[n4]!==0){var ng=goRId[n4];goRLibAdd(ng,q4);goRUpdAtari(ng)}
+      if(RB[n4]!==0){var ng=ID[n4];goRLibAdd(ng,q4);goRUpdAtari(ng)}
     }
   }
   // 被提点邻近的存活棋子: 2格邻域空点(含被提点)补回候选集
   if(capN>0){
     for(var i12b=0;i12b<capN;i12b++){
       var q5=caps[i12b],qb5=q5*4,qn5=goRNbN[q5];
-      for(var j5=0;j5<qn5;j5++){var n5b=nb[qb5+j5];if(goRB[n5b]!==0)goRAddNear(n5b)}
+      for(var j5=0;j5<qn5;j5++){var n5b=nb[qb5+j5];if(RB[n5b]!==0)goRAddNear(n5b)}
     }
   }
   // 合并/新建组
@@ -4464,26 +4486,26 @@ function goRPlay(p,c,koPos){
   if(sN>0){
     mg=Sg[0];
     for(var i13=1;i13<sN;i13++){
-      var sg=Sg[i13],m2=goRHead[sg];
+      var sg=Sg[i13],m2=HEAD[sg];
       while(m2>=0){
-        var nx=goRNext[m2];
-        goRId[m2]=mg;goRNext[m2]=goRHead[mg];goRHead[mg]=m2;
+        var nx=NXT[m2];
+        ID[m2]=mg;NXT[m2]=HEAD[mg];HEAD[mg]=m2;
         m2=nx;
       }
-      var sgb=sg*GO_MAXL,sgc=goRLibC[sg];
-      for(var k3=0;k3<sgc;k3++)goRLibAdd(mg,goRLibs[sgb+k3]);
-      if(goROvf[sg])goROvf[mg]=1;
+      var sgb=sg*GO_MAXL,sgc=LC[sg];
+      for(var k3=0;k3<sgc;k3++)goRLibAdd(mg,LB[sgb+k3]);
+      if(OV[sg])OV[mg]=1;
       goRFree(sg);
     }
-    goRId[p]=mg;goRNext[p]=goRHead[mg];goRHead[mg]=p;
-    for(var i14=0;i14<nn;i14++){var n5=nb[pb+i14];if(goRB[n5]===0)goRLibAdd(mg,n5)}
+    ID[p]=mg;NXT[p]=HEAD[mg];HEAD[mg]=p;
+    for(var i14=0;i14<nn;i14++){var n5=nb[pb+i14];if(RB[n5]===0)goRLibAdd(mg,n5)}
     goRLibDel(mg,p);
   }else{
     mg=goRAlloc(c);
-    goRId[p]=mg;goRNext[p]=-1;goRHead[mg]=p;
-    for(var i15=0;i15<nn;i15++){var n6=nb[pb+i15];if(goRB[n6]===0)goRLibAdd(mg,n6)}
+    ID[p]=mg;NXT[p]=-1;HEAD[mg]=p;
+    for(var i15=0;i15<nn;i15++){var n6=nb[pb+i15];if(RB[n6]===0)goRLibAdd(mg,n6)}
   }
-  goRB[p]=c;
+  RB[p]=c;
   goRAddNear(p);
   goRUpdAtari(mg);
   if(capN===1&&sN===0)return caps[0];
@@ -4491,13 +4513,14 @@ function goRPlay(p,c,koPos){
 }
 // 邻近标记: p周围2格空点加入候选集
 function goRAddNear(p){
-  var x=(p/GSZ)|0,y=p%GSZ;
+  var RB=goRB,NR=goRNear,NL=goRNearList,G=GSZ; // 热路径局部别名(数组仅原地修改)
+  var x=(p/G)|0,y=p%G;
   for(var dx=-2;dx<=2;dx++){
-    var nx=x+dx;if(nx<0||nx>=GSZ)continue;
+    var nx=x+dx;if(nx<0||nx>=G)continue;
     for(var dy=-2;dy<=2;dy++){
-      var ny=y+dy;if(ny<0||ny>=GSZ)continue;
-      var np=nx*GSZ+ny;
-      if(goRB[np]===0&&!goRNear[np]){goRNear[np]=1;goRNearList.push(np)}
+      var ny=y+dy;if(ny<0||ny>=G)continue;
+      var np=nx*G+ny;
+      if(RB[np]===0&&!NR[np]){NR[np]=1;NL.push(np)}
     }
   }
 }
@@ -4596,34 +4619,17 @@ var goRDCol=new Int8Array(GSZ*GSZ);  // 链颜色
 var goRDEye=new Int16Array(GSZ*GSZ); // 链眼位
 var goRGEye=new Int16Array(GO_MAXG); // 组ID→眼位(增量模式首轮用)
 var goRDNbC=new Int32Array(64);      // 区域邻接链ID缓存
+var goRDNbM=new Int32Array(GO_MAXG); // 区域邻接链去重stamp(O(1)判重)
 function goRCleanDead(){
-  var incr=true; // 首轮用增量组ID免链BFS; 一旦有死子(组结构失效)退回BFS
+  // 死子按整链移除→存活链的组ID/成员结构不变, 全程免BFS重建分组
   for(var iter=0;iter<5;iter++){
-    var st=++goRStamp,nc=0; // goRScr计数器必须用goRStamp(与goRPlay共用)
-    // 1. 逻辑分组剩余棋子(增量模式: 直接用goRId)
-    if(incr){
-      goRGEye.fill(0,0,goRNextG);
-    }else{
-      for(var p=0;p<GSZ*GSZ;p++){
-        if(goRB[p]===0||goRScr[p]===st)continue;
-        var c=goRB[p],cid=nc++;
-        goRDCol[cid]=c;goRDEye[cid]=0;
-        var qh=0,qt=0;
-        goRScrQ[qt++]=p;goRScr[p]=st;goRDG[p]=cid;
-        while(qh<qt){
-          var cur=goRScrQ[qh++];
-          var nn=goRNbN[cur],cb=cur*4;
-          for(var i=0;i<nn;i++){
-            var n=goRNbF[cb+i];
-            if(goRB[n]===c&&goRScr[n]!==st){goRScr[n]=st;goRDG[n]=cid;goRScrQ[qt++]=n}
-          }
-        }
-      }
-    }
+    // 1. 眼位清零(链分组沿用goRId增量结构)
+    goRGEye.fill(0,0,goRNextG);
     // 2. 空区域分析: 单色邻接区域给该色所有邻接链加眼位
     var rst=++goRCapSt;
     for(var p2=0;p2<GSZ*GSZ;p2++){
       if(goRB[p2]!==0||goRCapM[p2]===rst)continue;
+      var rnst=++goRStamp; // 区域级去重stamp: 跨区域必须独立(链邻接多区域时各计一次)
       var qh2=0,qt2=0,size=0,monoC=-1,mixed=false,nbc=0;
       goRScrQ[qt2++]=p2;goRCapM[p2]=rst;
       while(qh2<qt2){
@@ -4634,10 +4640,8 @@ function goRCleanDead(){
           if(v2===0){
             if(goRCapM[n2]!==rst){goRCapM[n2]=rst;goRScrQ[qt2++]=n2}
           }else{
-            var cid2=incr?goRId[n2]:goRDG[n2];
-            var dup=false;
-            for(var k=0;k<nbc;k++)if(goRDNbC[k]===cid2){dup=true;break}
-            if(!dup&&nbc<64)goRDNbC[nbc++]=cid2;
+            var cid2=goRId[n2];
+            if(goRDNbM[cid2]!==rnst){goRDNbM[cid2]=rnst;if(nbc<64)goRDNbC[nbc++]=cid2}
             if(monoC===-1)monoC=v2;
             else if(monoC!==v2)mixed=true;
           }
@@ -4645,19 +4649,16 @@ function goRCleanDead(){
       }
       if(!mixed&&monoC>=0){
         var contrib=size>=3?2:1;
-        if(incr){for(var k2=0;k2<nbc;k2++)goRGEye[goRDNbC[k2]]+=contrib}
-        else{for(var k2b=0;k2b<nbc;k2b++)goRDEye[goRDNbC[k2b]]+=contrib}
+        for(var k2=0;k2<nbc;k2++)goRGEye[goRDNbC[k2]]+=contrib;
       }
     }
     // 3. 眼位<2的链判死移除
     var dead=false;
     for(var p3=0;p3<GSZ*GSZ;p3++){
       if(goRB[p3]===0)continue;
-      var ey=incr?goRGEye[goRId[p3]]:goRDEye[goRDG[p3]];
-      if(ey<2){goRB[p3]=0;dead=true}
+      if(goRGEye[goRId[p3]]<2){goRB[p3]=0;dead=true}
     }
     if(!dead)break;
-    incr=false;
   }
 }
 // 终局计分(中国规则,区域归属+死子清理): 返回refColor胜率
@@ -4692,27 +4693,28 @@ function goRFinalScore(refColor){
 // Rollout: 局部应手(上一手邻域1气组)+融合抽样加权; recMv/recC记录全程着法(AMAF)
 // goRSampleW: 单遍邻居扫描融合眼判定/模式/提子/救子, 眼返回-1
 function goRSampleW(p,c){
+  var RB=goRB,ID=goRId,LC=goRLibC,OV=goROvf,G=GSZ; // 热路径局部别名(数组仅原地修改)
   var nb=goRNbF,nn=goRNbN[p],pb=p*4;
-  var x=(p/GSZ)|0,y=p%GSZ;
+  var x=(p/G)|0,y=p%G;
   var own=0,opn=0,cap=0,sav=0,wFill=0;
   for(var j=0;j<nn;j++){
-    var n=nb[pb+j],v=goRB[n];
+    var n=nb[pb+j],v=RB[n];
     if(v===0)continue;
-    var g=goRId[n];
-    if(goRLibC[g]===1&&!goROvf[g]){
+    var g=ID[n];
+    if(LC[g]===1&&!OV[g]){
       if(v===c){own++;sav++}else{opn++;cap++}
     }else if(v===c)own++;
     else{
       opn++;
-      if(!goROvf[g]&&goRLibC[g]<=3)wFill+=(4-goRLibC[g]); // 气越少围杀越近
+      if(!OV[g]&&LC[g]<=3)wFill+=(4-LC[g]); // 气越少围杀越近
     }
   }
   if(own===nn){ // 候选可能是真眼: 对角检查
     var sc=0,wl=0;
     for(var dx=-1;dx<=1;dx+=2)for(var dy=-1;dy<=1;dy+=2){
       var nx=x+dx,ny=y+dy;
-      if(nx<0||nx>=GSZ||ny<0||ny>=GSZ)wl++;
-      else if(goRB[nx*GSZ+ny]===c)sc++;
+      if(nx<0||nx>=G||ny<0||ny>=G)wl++;
+      else if(RB[nx*G+ny]===c)sc++;
       else wl++;
     }
     if(wl>0){if(sc+wl>=4)return -1}
@@ -4727,7 +4729,7 @@ function goRSampleW(p,c){
   if(sav>0)w+=1.5;
   if(wFill>0)w+=Math.min(2,wFill*0.4); // 围杀敌弱链(按气数加权)
   if(opn===0&&own>=1)w=Math.min(w,0.15); // 己方势力内部: 硬下限(低于pass阈值0.25)
-  var edge=Math.min(x,y,GSZ-1-x,GSZ-1-y);
+  var edge=Math.min(x,y,G-1-x,G-1-y);
   if(edge===2)w+=0.15;
   else if(edge===3)w+=0.25;
   else if(edge===0)w*=0.3;
@@ -4738,13 +4740,15 @@ function goRSampleW(p,c){
 var goRSd=(Date.now()*2654435761)>>>0||1;
 function goRRnd(){goRSd^=goRSd<<13;goRSd^=goRSd>>>17;goRSd^=goRSd<<5;return (goRSd>>>0)/4294967296}
 function goRSim(startColor,koPos,maxMoves,recMv,recC){
+  var RB=goRB,ID=goRId,AL=goRAtariL,AV=goRAtariV,GC=goRGCol,LB=goRLibs,LC=goRLibC,OV=goROvf,ML=GO_MAXL; // 热路径局部别名(数组仅原地修改)
   var sc=startColor,sk=koPos,pass=0,mc=0;
+  var sd=goRSd; // RNG状态局部化(结束写回)
   var nb=goRNbF,nbn=goRNbN,L=goRNearList;
   while(pass<2&&mc<maxMoves){
     if(L.length>700)goRNearRebuild();
     else if((mc&31)===31&&L.length>60){ // 就地压缩: 剔除已占用点, 提升抽样命中率
       var w0=0;
-      for(var c2=0;c2<L.length;c2++){var pp=L[c2];if(goRB[pp]===0)L[w0++]=pp}
+      for(var c2=0;c2<L.length;c2++){var pp=L[c2];if(RB[pp]===0)L[w0++]=pp}
       L.length=w0;
     }
     var nl=L.length;
@@ -4754,19 +4758,19 @@ function goRSim(startColor,koPos,maxMoves,recMv,recC){
     // 全局叫吃应手: 敌1气组→提(权10), 己1气组→逃(权6, 逃后有气才逃)
     if(goRAtariN>0){
       if((mc&63)===0&&goRAtariN>24)goRCompact();
-      for(var a=0;a<goRAtariN;a++){
-        var ag=goRAtariL[a];
-        if(!goRAtariV[ag])continue;
-        var tp=goRLibs[ag*GO_MAXL];
-        if(goRB[tp]!==0||tp===sk)continue;
-        if(goRGCol[ag]===opp){
+      for(var a=0,AN=goRAtariN;a<AN;a++){
+        var ag=AL[a];
+        if(!AV[ag])continue;
+        var tp=LB[ag*ML];
+        if(RB[tp]!==0||tp===sk)continue;
+        if(GC[ag]===opp){
           if(10>bw){bw=10;mv=tp}
         }else{
           var esc=0,tb=tp*4,tn=nbn[tp];
           for(var e=0;e<tn;e++){
-            var en=nb[tb+e],ev=goRB[en];
+            var en=nb[tb+e],ev=RB[en];
             if(ev===0)esc++;
-            else if(ev===opp){var eg2=goRId[en];if(goRLibC[eg2]===1&&!goROvf[eg2])esc++}
+            else if(ev===opp){var eg2=ID[en];if(LC[eg2]===1&&!OV[eg2])esc++}
           }
           if(esc>0&&6>bw){bw=6;mv=tp}
         }
@@ -4775,8 +4779,8 @@ function goRSim(startColor,koPos,maxMoves,recMv,recC){
     // 抽样候选: 融合权重(眼→跳过, 打劫眼→低权); 低权点(<0.25)不接受
     var tries=Math.min(14,nl<<1);
     for(var t=0;t<tries;t++){
-      var p=L[(goRRnd()*nl)|0];
-      if(goRB[p]!==0)continue;
+      sd^=sd<<13;sd^=sd>>>17;sd^=sd<<5;sd>>>=0;var p=L[(sd/4294967296*nl)|0];
+      if(RB[p]!==0)continue;
       var w=goRSampleW(p,sc);
       if(w<0){
         if(w===-1)continue;
@@ -4787,10 +4791,10 @@ function goRSim(startColor,koPos,maxMoves,recMv,recC){
     }
     if(mv<0){
       // 兜底全量扫描: 找权重>=0.25的点(找不到→pass, 不填己方内部)
-      var st2=(goRRnd()*nl)|0;
+      sd^=sd<<13;sd^=sd>>>17;sd^=sd<<5;sd>>>=0;var st2=(sd/4294967296*nl)|0;
       for(var t2=0;t2<nl;t2++){
         var p2=L[(st2+t2)%nl];
-        if(goRB[p2]!==0)continue;
+        if(RB[p2]!==0)continue;
         var w2=goRSampleW(p2,sc);
         if(w2===-1)continue;
         if(w2===-2)w2=0.3;
@@ -4806,6 +4810,7 @@ function goRSim(startColor,koPos,maxMoves,recMv,recC){
     }
     sc=3-sc;mc++;
   }
+  goRSd=sd;
   var fd=goRFinalScore(startColor);
   return fd>30?30:(fd<-30?-30:fd); // 限幅压方差(墙死±350极值→±30)
 }
@@ -5179,7 +5184,7 @@ function goMCTS(b,c,ko,onMCTSResult){
     var s=si,timeUp=false;
     for(;s<SIMS;s++){
       if((s&31)===0&&Date.now()-mctsStart>TLIMIT){timeUp=true;break}
-      goRLoad(b); // 恢复根局面(全量重建免快照)
+      goRLoad(b); // 恢复根局面(全量重建; 快照恢复经逐模拟追踪证明与重建在MCTS语境不等价,已弃用)
       var node=root,sk=koPos;
       PMv.length=0;PMC.length=0;
       while(true){
@@ -5430,11 +5435,10 @@ function goEnd(){
   var t=goTerr(goB);
   // 识别死子: 不在活棋集中且所有气都在对方地盘中的棋串
   var aliveSet={};
+  // goBenson返回扁平坐标数组{1:[[x,y],...],2:[...]}(修复: 原按.stones访问导致有活棋时终局计分崩溃)
   for(var c in alive){
     for(var i=0;i<alive[c].length;i++){
-      for(var j=0;j<alive[c][i].stones.length;j++){
-        aliveSet[alive[c][i].stones[j][0]*GSZ+alive[c][i].stones[j][1]]=parseInt(c);
-      }
+      aliveSet[alive[c][i][0]*GSZ+alive[c][i][1]]=parseInt(c);
     }
   }
   var deadStones=[];
@@ -5765,6 +5769,11 @@ function xqEval(b){
     // 开中局: 士象齐全防守稳固加分
     if(redGuards===2&&redEle===2)s+=15;
     if(blkGuards===2&&blkEle===2)s-=15;
+    // 缺士怕车/缺象怕炮马: 防御体系受损按缺失数量梯度惩罚(对方大子仍在时才计)
+    if(blkRook>0)s-=16*(2-redGuards);
+    if(redRook>0)s+=16*(2-blkGuards);
+    if(blkOff>0)s-=11*(2-redEle);
+    if(redOff>0)s+=11*(2-blkEle);
   }
   // 车马炮的协同评估 (车马炮齐全为佳)
   if(redOff>=3)s+=25;
@@ -5808,6 +5817,9 @@ function xqEval(b){
     if(redR2){if(b[4][c5]===5)s+=6;if(b[0][c5]===5)s+=8} // 兵林线/沉底车
     if(blkR2){if(b[5][c5]===12)s-=6;if(b[9][c5]===12)s-=8}
   }
+  // 空头炮威胁("空头炮,凶恶莫当"): 炮与敌帅同列且中间无隔子 → 强战略威慑
+  if(bc>=0){for(var kt1=bk-1;kt1>=0;kt1--){if(b[kt1][bc]===6){var kt2=true;for(var kt3=kt1+1;kt3<bk;kt3++)if(b[kt3][bc]!==0){kt2=false;break}if(kt2)s+=26;break}}}
+  if(rk>=0){for(var kt4=rk+1;kt4<10;kt4++){if(b[kt4][rc]===13){var kt5=true;for(var kt6=rk+1;kt6<kt4;kt6++)if(b[kt6][rc]!==0){kt5=false;break}if(kt5)s-=26;break}}}
   // 高手及以上: 双车同线惩罚 (容易被兑)
   if(rookCols){
     for(var ck in rookCols){
@@ -5902,9 +5914,11 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn,pathSet){
   if(pathSet&&ply>0&&pathSet[h]===1)return 0; // 路径重复 → 按和棋分处理
   var tt=xqTT.get(h);
   if(tt&&tt.depth>=depth){
-    if(tt.flag===0)return tt.score;
-    if(tt.flag===1&&tt.score>=beta)return tt.score;
-    if(tt.flag===2&&tt.score<=alpha)return tt.score;
+    // 杀棋分数按ply校正(存入时+ply转根相对, 取出时还原节点相对), 保证不同层深取出的杀距准确
+    var tts=tt.score>90000?tt.score-ply:(tt.score<-90000?tt.score+ply:tt.score);
+    if(tt.flag===0)return tts;
+    if(tt.flag===1&&tts>=beta)return tts;
+    if(tt.flag===2&&tts<=alpha)return tts;
   }
   // 将军检测
   var inCheck=xqCheck(b,red);
@@ -5923,9 +5937,18 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn,pathSet){
   var moves=xqGen(b,red,false);
   var ttMove=tt?tt.bm:null;
   xqOrderMoves(moves,ttMove,ply);
+  // 静态裁剪(futility)预计算: 仅零窗浅层节点, 静态分+余量追不上alpha时宁静着法全部跳过
+  // (实测: 节点数-48%, 深度8搜索1.4s vs 1.9s)
+  var futil=false,fstand=0;
+  if(!inCheck&&depth<=2&&depth>0&&beta<900000&&alpha>-900000&&(beta-alpha)<=1){
+    fstand=xqEval(b);if(!red)fstand=-fstand;
+    futil=fstand+depth*160<=alpha;
+  }
   var bm=null,oa=alpha,legalCnt=0;
   for(var i=0;i<moves.length;i++){
     var m=moves[i];
+    // 静态裁剪: 零窗浅层节点宁静着法(非吃/非TT/非杀手)无法追回alpha → 跳过(保留末位着法防困毙误判)
+    if(futil&&i<moves.length-1&&m.captured===0&&m.score<9000)continue;
     // make: 就地走子(王位增量跟踪)
     var cap=xqMk(b,m);
     // 走完自己被将军 → 非法,跳过
@@ -5937,10 +5960,10 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn,pathSet){
     if(legalCnt===1){
       sc=-xqPVS(b,depth-1,-beta,-alpha,!red,ply+1,nh,pathSet);
     }else{
-      // Late Move Reduction
+      // Late Move Reduction (杀手/历史高分走法少减, 其余多减)
       var reduction=0;
       if(m.captured===0&&depth>=3){
-        if(legalCnt>10&&depth>=5)reduction=2;
+        if(legalCnt>10&&depth>=5)reduction=m.score>=9000?1:2;
         else if(legalCnt>4)reduction=1;
       }
       sc=-xqPVS(b,depth-1-reduction,-alpha-1,-alpha,!red,ply+1,nh,pathSet);
@@ -5967,14 +5990,14 @@ function xqPVS(b,depth,alpha,beta,red,ply,hIn,pathSet){
         if(!xqHist2[m.fr*9+m.fc])xqHist2[m.fr*9+m.fc]=[];
         xqHist2[m.fr*9+m.fc][m.tr*9+m.tc]=(xqHist2[m.fr*9+m.fc][m.tr*9+m.tc]||0)+depth*depth;
       }
-      if(xqTT.size<xqTTMax)xqTT.set(h,{depth:depth,score:sc,flag:1,bm:m});
+      if(xqTT.size<xqTTMax)xqTT.set(h,{depth:depth,score:sc>90000?sc+ply:(sc<-90000?sc-ply:sc),flag:1,bm:m});
       return sc;
     }
     if(sc>alpha){alpha=sc;bm=m}
   }
   if(legalCnt===0)return -99000-depth; // 将死或困毙: 当前行棋方判负(negamax当前方视角, 修复旧版黑方被将死返回+99000的符号反转bug)
   var flag=alpha>oa?0:2;
-  if(xqTT.size<xqTTMax)xqTT.set(h,{depth:depth,score:alpha,flag:flag,bm:bm});
+  if(xqTT.size<xqTTMax)xqTT.set(h,{depth:depth,score:alpha>90000?alpha+ply:(alpha<-90000?alpha-ply:alpha),flag:flag,bm:bm});
   return alpha;
 }
 // 开局库 (中炮, 屏风马, 反宫马, 仙人指路等)
