@@ -49,6 +49,8 @@ body{background:var(--paper);background-image:radial-gradient(ellipse at 15% 10%
 /* 5/6 档仅国际象棋可用（其余三棋种已封顶，避免名不副实） */
 .diff-sel .diff[data-d="5"],.diff-sel .diff[data-d="6"]{display:none}
 body.game-chess .diff-sel .diff[data-d="5"],body.game-chess .diff-sel .diff[data-d="6"]{display:block}
+/* 手机窄屏：6 档收成 3+3 两行，避免最后一个按钮独自折行显得失衡 */
+@media (max-width:460px){body.game-chess .diff-sel{max-width:184px;margin-left:auto;margin-right:auto}}
 #wrap{position:relative;border-radius:var(--rl);overflow:hidden;box-shadow:0 2px 8px rgba(60,40,10,.1),0 8px 24px rgba(60,40,10,.06),0 0 0 1px rgba(107,82,48,.12);max-width:95vw}
 canvas{display:block;cursor:default;touch-action:none}
 .ctl{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;justify-content:center}
