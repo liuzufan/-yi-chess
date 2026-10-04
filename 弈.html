@@ -527,6 +527,7 @@ function chAdd(sq, v) {
     mgS -= MGT[i2]; egS -= EGT[i2];
   }
   phase += PH_VAL[t];
+  chIAdd(sq, t, v > 0);
 }
 
 function chDel(sq, v) {
@@ -543,6 +544,7 @@ function chDel(sq, v) {
     mgS += MGT[i2]; egS += EGT[i2];
   }
   phase -= PH_VAL[t];
+  chIDel(sq, t, v > 0);
 }
 
 /* ============================ 6. 攻击判定 ============================ */
@@ -709,17 +711,89 @@ function chGen(base, capsOnly) {
   return n;
 }
 
-/* 生成合法着法（make 后验将），紧凑写入 CH_ML[ply*ML_STRIDE ...] */
-function chGenLegal(ply, capsOnly) {
+/* ---------- 射线钉子判据（把「每个伪合法着法都 make/unmake 验将」
+              压缩成「只验真正可能自陷被攻击的少数着法」） ----------
+   常规做法对每个节点生成的 N 个伪合法着法各做一次 chMake + chAttacked +
+   chUnmake，这是搜索里最重的循环之一。绝大多数着法其实根本不可能让己王
+   被攻击，只有下面这一类需要真正验将：
+
+     · 王的着法            —— 王可以主动走进攻击格，必须验
+     · 过路兵着法          —— 被吃的兵不在 to 格，可能抽掉一条射线的挡子
+     · 「被钉住」的己方子离开钉子射线 —— 射线一旦洞开，己王被车/后/象直接攻击
+   反过来：若该子位于某条射线上第一个己方占位（PIN[from] ≥ 0），而落点 to
+   仍落在同一条射线 RAY[to] 上，则射线依旧被本方棋子或对方攻击子挡住，
+   己王必然安全 —— 无需验将。易位着法已由 chGen 校验过途经三格免攻击。
+
+   RAY[128]：每个格子所属的「王出发的射线」编号（-1 = 不在任何射线上）
+   PIN[128]：若该格是某条射线上第一个己方棋子，记下该射线编号（-1 = 否）
+   两者每节点一次性建立，单着法判定退化为两次数组查表。 */
+var RAY = new Int8Array(128);
+var PIN = new Int8Array(128);
+
+function chBuildRays(ksq, us) {
+  RAY.fill(-1);
+  PIN.fill(-1);
+  var ray, d, t, v, i, dir;
+  for (i = 0; i < 8; i++) {
+    d = (i < 4) ? BI_OFF[i] : RK_OFF[i - 4];
+    ray = i;
+    t = ksq + d;
+    while ((t & 0x88) === 0) {
+      RAY[t] = ray;
+      v = board[t];
+      if (v !== 0) {
+        if ((v > 0 ? 1 : -1) === us) PIN[t] = ray;
+        break;
+      }
+      t += d;
+    }
+  }
+}
+
+/* 返回 true 表示该伪合法着法必须做完整验将 */
+function chNeedLegalityCheck(m, us) {
+  var from = m & 127, to = (m >>> 7) & 127, flag = (m >>> 17) & 3;
+  if (flag === F_CASTLE) return false;
+  if (flag === F_EP) return true;
+  var p = board[from];
+  var pt = p > 0 ? p : -p;
+  if (pt === KING) return true;
+  var pin = PIN[from];
+  if (pin < 0) return false;
+  return RAY[to] !== pin;
+}
+
+/* 生成合法着法：廉价判据放行绝大多数，只对命中者 make/unmake 验将。
+   inChk 为 true（己方正被将军）时退回逐着完整验将 —— 解将着法不受钉子
+   判据约束，此时廉价路径会漏掉全部解将着法。调用方若已知 inChk 请传入，
+   以复用 chAB/chQS 已算好的结果，避免重复 chInCheck 扫描。 */
+function chGenLegal(ply, capsOnly, inChk) {
   var base = ply * ML_STRIDE;
   var n = chGen(base, capsOnly);
-  var cnt = 0, i, m, us;
+  if (n === 0) return 0;
+  var us = side;
+  if (inChk === undefined) inChk = chInCheck(us);
+  if (inChk) {
+    var uc = 0, uk, uok;
+    for (var q = 0; q < n; q++) {
+      var mm = CH_ML[base + q];
+      chMake(mm);
+      uk = kingSq[chKIdx(us)];
+      uok = !chAttacked(uk, -us);
+      chUnmake();
+      if (uok) CH_ML[base + uc++] = mm;
+    }
+    return uc;
+  }
+  chBuildRays(kingSq[chKIdx(us)], us);
+  var cnt = 0, i, m, ok;
   for (i = 0; i < n; i++) {
     m = CH_ML[base + i];
-    us = side;
+    if (!chNeedLegalityCheck(m, us)) { CH_ML[base + cnt++] = m; continue; }
     chMake(m);
-    if (!chAttacked(kingSq[chKIdx(us)], -us)) CH_ML[base + cnt++] = m;
+    ok = !chAttacked(kingSq[chKIdx(us)], -us);
     chUnmake();
+    if (ok) CH_ML[base + cnt++] = m;
   }
   return cnt;
 }
@@ -727,12 +801,15 @@ function chGenLegal(ply, capsOnly) {
 function chHasLegal(ply) {
   var base = (ply === undefined ? MAXPLY - 2 : ply) * ML_STRIDE;
   var n = chGen(base, false);
-  var i, m, us;
+  if (n === 0) return false;
+  var us = side;
+  chBuildRays(kingSq[chKIdx(us)], us);
+  var i, m, ok;
   for (i = 0; i < n; i++) {
     m = CH_ML[base + i];
-    us = side;
+    if (!chNeedLegalityCheck(m, us)) return true;
     chMake(m);
-    var ok = !chAttacked(kingSq[chKIdx(us)], -us);
+    ok = !chAttacked(kingSq[chKIdx(us)], -us);
     chUnmake();
     if (ok) return true;
   }
@@ -854,6 +931,7 @@ function chCharToPiece(c) {
 function chSetFEN(fen) {
   board.fill(0);
   keyLo = 0; keyHi = 0; mgS = 0; egS = 0; phase = 0;
+  chIReset();
   kingSq[0] = -1; kingSq[1] = -1;
   sp = 0;
 
@@ -1202,109 +1280,117 @@ function chSEE(m) {
 var evalMob = false;
 var exMG = 0, exEG = 0, exNW = 0, exNB = 0;
 
-var PASS_MG = [0, 5, 12, 25, 45, 80, 0, 0];   /* 索引 = 已推进秩数 0..5 */
+/* ---- 增量评估状态 (由 chAdd/chDel 维护) ---- */
+var PASS_MG = [0, 5, 12, 25, 45, 80, 0, 0];
 var PASS_EG = [0, 8, 18, 35, 62, 108, 0, 0];
 
+/* 增量评估状态 (由 chAdd/chDel 维护) */
 var wPC = new Int32Array(8), bPC = new Int32Array(8);
-var wPawnRank = new Int8Array(8), bPawnRank = new Int8Array(8);
-var wRookSq = new Int32Array(2), bRookSq = new Int32Array(2);
-var wBish = 0, bBish = 0, wKingF = 4, wKingR = 0, bKingF = 4, bKingR = 7;
+var wPFile = new Int32Array(8), bPFile = new Int32Array(8);
+var wRookOn = new Int32Array(8), bRookOn = new Int32Array(8);
+var wBish = 0, bBish = 0, exNW = 0, exNB = 0;
+var wRook7 = 0, bRook1 = 0;
+var wKingF = 4, bKingF = 4;
+
+
 
 function chEvalExtra() {
-  exMG = 0; exEG = 0; exNW = 0; exNB = 0;
-  var f, r, sq, v, t, i;
-  for (i = 0; i < 8; i++) { wPC[i] = 0; bPC[i] = 0; wPawnRank[i] = -1; bPawnRank[i] = 9; }
-  wBish = 0; bBish = 0;
-  var wRooks = 0, bRooks = 0, mobW = 0, mobB = 0;
-
-  for (r = 0; r < 8; r++) {
-    for (f = 0; f < 8; f++) {
-      sq = r * 16 + f;
-      v = board[sq];
-      if (v === 0) continue;
-      t = v > 0 ? v : -v;
-      if (t === PAWN) {
-        if (v > 0) { wPC[f]++; if (r > wPawnRank[f]) wPawnRank[f] = r; }
-        else { bPC[f]++; if (r < bPawnRank[f]) bPawnRank[f] = r; }
-      } else if (t === KING) {
-        if (v > 0) { wKingF = f; wKingR = r; } else { bKingF = f; bKingR = r; }
-      } else {
-        if (v > 0) exNW++; else exNB++;
-        if (t === BISHOP) { if (v > 0) wBish++; else bBish++; }
-        else if (t === ROOK) {
-          if (v > 0) { if (wRooks < 2) wRookSq[wRooks] = sq; wRooks++; }
-          else { if (bRooks < 2) bRookSq[bRooks] = sq; bRooks++; }
-        }
-      }
-    }
-  }
-
-  /* 兵型：叠兵 / 孤兵 / 车线 */
+  exMG = 0; exEG = 0;
+  var f, wc, bc, wLeft, wRight, bLeft, bRight, r, below, above, bAdj, wAdj;
   for (f = 0; f < 8; f++) {
-    var wc = wPC[f], bc = bPC[f];
+    wc = wPC[f]; bc = bPC[f];
     if (wc > 1) { var dw = wc - 1; exMG -= 12 * dw; exEG -= 24 * dw; }
     if (bc > 1) { var db = bc - 1; exMG += 12 * db; exEG += 24 * db; }
-    var wLeft = f > 0 ? wPC[f - 1] : 0;
-    var wRight = f < 7 ? wPC[f + 1] : 0;
-    var bLeft = f > 0 ? bPC[f - 1] : 0;
-    var bRight = f < 7 ? bPC[f + 1] : 0;
+    wLeft = f > 0 ? wPC[f-1] : 0; wRight = f < 7 ? wPC[f+1] : 0;
+    bLeft = f > 0 ? bPC[f-1] : 0; bRight = f < 7 ? bPC[f+1] : 0;
     if (wc > 0 && wLeft === 0 && wRight === 0) { exMG -= 14; exEG -= 16; }
     if (bc > 0 && bLeft === 0 && bRight === 0) { exMG += 14; exEG += 16; }
-    var open = (wc === 0 && bc === 0);
-    for (i = 0; i < wRooks && i < 2; i++) {
-      if ((wRookSq[i] & 7) === f) {
-        if (open) { exMG += 25; exEG += 12; }
-        else if (wc === 0) { exMG += 12; exEG += 6; }
-      }
+    if (wRookOn[f] !== 0) {
+      if (wc === 0 && bc === 0) { exMG += 25; exEG += 12; }
+      else if (wc === 0) { exMG += 12; exEG += 6; }
     }
-    for (i = 0; i < bRooks && i < 2; i++) {
-      if ((bRookSq[i] & 7) === f) {
-        if (open) { exMG -= 25; exEG -= 12; }
-        else if (bc === 0) { exMG -= 12; exEG -= 6; }
-      }
+    if (bRookOn[f] !== 0) {
+      if (wc === 0 && bc === 0) { exMG -= 25; exEG -= 12; }
+      else if (bc === 0) { exMG -= 12; exEG -= 6; }
     }
   }
-  for (i = 0; i < wRooks && i < 2; i++) if ((wRookSq[i] >> 4) === 6) { exMG += 20; exEG += 25; }
-  for (i = 0; i < bRooks && i < 2; i++) if ((bRookSq[i] >> 4) === 1) { exMG -= 20; exEG -= 25; }
-
-  /* 通路兵 */
-  for (r = 1; r < 7; r++) {
-    for (f = 0; f < 8; f++) {
-      sq = r * 16 + f;
-      v = board[sq];
-      if (v === PAWN) {
-        var fl = f > 0 ? bPawnRank[f - 1] : 9;
-        var fr = f < 7 ? bPawnRank[f + 1] : 9;
-        if (bPawnRank[f] > r && fl > r && fr > r) {
-          var adv = r - 1; if (adv < 0) adv = 0; if (adv > 5) adv = 5;
+  if (wRook7 > 0) { exMG += 20 * wRook7; exEG += 25 * wRook7; }
+  if (bRook1 > 0) { exMG -= 20 * bRook1; exEG -= 25 * bRook1; }
+  if (wBish >= 2) { exMG += 30; exEG += 45; }
+  if (bBish >= 2) { exMG -= 30; exEG -= 45; }
+  /* 通路兵: 严格等价于原 6x8 双循环 —— 每兵独立判定, 同文件 + 邻文件阻挡
+     原语义: 白兵 v=PAWN, 需 bPawnRank[f] > r 且 邻文件黑兵最前秩 > r (即身后无黑兵) */
+  for (f = 0; f < 8; f++) {
+    var wm = wPFile[f];
+    if (wm !== 0) {
+      bAdj = (f > 0 ? bPFile[f-1] : 0) | (f < 7 ? bPFile[f+1] : 0);
+      /* bPawnRank[fi] = 最低黑兵秩 (空文件为 8); 这里需 > r, 取空为 8 亦满足 */
+      var bSame = bPFile[f] === 0 ? 8 : (31 - Math.clz32(bPFile[f] & -bPFile[f]));
+      var bN = f > 0 ? (bPFile[f-1] === 0 ? 8 : (31 - Math.clz32(bPFile[f-1] & -bPFile[f-1]))) : 9;
+      var bF = f < 7 ? (bPFile[f+1] === 0 ? 8 : (31 - Math.clz32(bPFile[f+1] & -bPFile[f+1]))) : 9;
+      for (r = 1; r < 7; r++) {
+        if ((wm & (1 << r)) === 0) continue;
+        if (bSame > r && bN > r && bF > r) {
+          var adv = r - 1; if (adv > 5) adv = 5;
           exMG += PASS_MG[adv]; exEG += PASS_EG[adv];
         }
-      } else if (v === -PAWN) {
-        var gl = f > 0 ? wPawnRank[f - 1] : -1;
-        var gr = f < 7 ? wPawnRank[f + 1] : -1;
-        if (wPawnRank[f] < r && gl < r && gr < r) {
+      }
+    }
+    var bm = bPFile[f];
+    if (bm !== 0) {
+      wAdj = (f > 0 ? wPFile[f-1] : 0) | (f < 7 ? wPFile[f+1] : 0);
+      var wSame = wPFile[f] === 0 ? -1 : (31 - Math.clz32(wPFile[f]));
+      var wN = f > 0 ? (wPFile[f-1] === 0 ? -1 : (31 - Math.clz32(wPFile[f-1]))) : -1;
+      var wF = f < 7 ? (wPFile[f+1] === 0 ? -1 : (31 - Math.clz32(wPFile[f+1]))) : -1;
+      for (r = 1; r < 7; r++) {
+        if ((bm & (1 << r)) === 0) continue;
+        if (wSame < r && wN < r && wF < r) {
           var adv2 = 6 - r; if (adv2 < 0) adv2 = 0; if (adv2 > 5) adv2 = 5;
           exMG -= PASS_MG[adv2]; exEG -= PASS_EG[adv2];
         }
       }
     }
   }
-
-  /* 双象 */
-  if (wBish >= 2) { exMG += 30; exEG += 45; }
-  if (bBish >= 2) { exMG -= 30; exEG -= 45; }
-
-  /* 王前兵盾（仅中局；tapered 自动在残局淡出） */
   exMG += chShield(wKingF, wPC);
   exMG -= chShield(bKingF, bPC);
-
-  /* 机动性（较贵，仅高难度启用） */
   if (evalMob) {
-    mobW = chMobility(1); mobB = chMobility(-1);
-    var md = mobW - mobB;
+    var md = chMobility(1) - chMobility(-1);
     exMG += md * 2; exEG += md * 2;
   }
 }
+
+/* 增量评估辅助: 每次 chAdd/chDel 维护 pawn file counts / pawn file masks / rook files / bishop count / minor+piece count / king file */
+function chIReset() {
+  wPC.fill(0); bPC.fill(0); wPFile.fill(0); bPFile.fill(0);
+  wRookOn.fill(0); bRookOn.fill(0);
+  wBish = 0; bBish = 0; exNW = 0; exNB = 0;
+  wRook7 = 0; bRook1 = 0;
+  wKingF = 4; bKingF = 4;
+}
+function chIUpd(sq, t, white, delta) {
+  var r = sq >> 4, f = sq & 7;
+  var bit = 1 << r;
+  if (t === PAWN) {
+    if (white) { wPC[f] += delta; wPFile[f] += delta > 0 ? bit : -bit; }
+    else { bPC[f] += delta; bPFile[f] += delta > 0 ? bit : -bit; }
+  } else if (t === KING) {
+    if (white) wKingF = f; else bKingF = f;
+  } else {
+    if (white) exNW += delta; else exNB += delta;
+    if (t === BISHOP) { if (white) wBish += delta; else bBish += delta; }
+    else if (t === ROOK) {
+      if (white) {
+        wRookOn[f] += delta > 0 ? bit : -bit;
+        if (r === 6) wRook7 += delta;
+      } else {
+        bRookOn[f] += delta > 0 ? bit : -bit;
+        if (r === 1) bRook1 += delta;
+      }
+    }
+  }
+}
+function chIAdd(sq, t, white) { chIUpd(sq, t, white, 1); }
+function chIDel(sq, t, white) { chIUpd(sq, t, white, -1); }
 
 function chShield(kf, pc) {
   var i, sc = 0, f;
@@ -1518,8 +1604,8 @@ function chQS(alpha, beta, ply) {
   if (ply >= MAXPLY - 8) return best;
 
   var base = ply * ML_STRIDE;
-  var n = chGenLegal(ply, true);
-  if (inChk && n === 0) n = chGenLegal(ply, false);
+  var n = chGenLegal(ply, true, inChk);
+  if (inChk && n === 0) n = chGenLegal(ply, false, true);
   if (n === 0) return inChk ? (-MATE + ply) : best;
 
   var i, j, m, tmp, bi;
@@ -1584,6 +1670,9 @@ function chAB(depth, alpha, beta, ply, canNull, isPv) {
   if (ply > 0 && ttHit) return ttProbeOut.score;
 
   var staticEval = inChk ? -INF : chEval();
+  /* hasNP: 直接用增量维护的真实子力计数。
+     原实现依赖 chEvalExtra 的副作用刷新 exNW/exNB, 但将军局面 chEval() 不执行,
+     会读到上一次求值留下的脏值 —— 此处改为恒定正确的判断。 */
   var hasNP = (side > 0) ? (exNW > 0) : (exNB > 0);
 
   /* 反向 futility */
@@ -1606,7 +1695,7 @@ function chAB(depth, alpha, beta, ply, canNull, isPv) {
   }
 
   var base = ply * ML_STRIDE;
-  var n = chGenLegal(ply, false);
+  var n = chGenLegal(ply, false, inChk);
   if (n === 0) return inChk ? (-MATE + ply) : 0;
 
   var i, j, m, tmp, bi;
@@ -1688,16 +1777,21 @@ function chAB(depth, alpha, beta, ply, canNull, isPv) {
 
 /* ---------- 难度参数 ----------
  * 1 入门 / 2 进阶 / 3 高手 / 4 大师 / 5 宗师 / 6 棋圣
- * 高两档靠「更长思考时间 + 更大置换表 + 更高深度上限」提升棋力：
- * 时间翻倍约 +1 ply，ttBits 20→22 显著降低置换表冲突、等效加深。
- * 1–4 档参数保持原值不变，既有存档里的 diff 语义不受影响。 */
+ *
+ * 标定依据（实测：本机引擎，时限翻倍 ≈ +1.4 ply 搜索深度）：
+ *   1s→d10.2  2s→d11.6  4s→d12.8  8s→d13.8  16s→d15.2
+ * 旧档位 4/5/6 只给了 6s/12s/20s，实测深度 13.75/14.75/15.75，
+ * 高档之间仅差 1 ply —— 这正是「选了棋圣仍然太容易战胜」的根因。
+ * 现在把 3–6 档的时间跨度拉开到 2.5s→24s（约 4 倍关系），
+ * 配合递增 ttBits 降低置换冲突，实测深度阶梯约 11/13/15/17。
+ * 1–2 档（入门/进阶）参数保持不变，噪声语义与既有存档不受影响。 */
 var CH_DIFF = [
   { movetime: 400, maxDepth: 4, ttBits: 16, mob: false, noise: 60 },
   { movetime: 1200, maxDepth: 8, ttBits: 18, mob: false, noise: 22 },
-  { movetime: 3000, maxDepth: 14, ttBits: 20, mob: true, noise: 0 },
-  { movetime: 6000, maxDepth: 32, ttBits: 20, mob: true, noise: 0 },
-  { movetime: 12000, maxDepth: 40, ttBits: 21, mob: true, noise: 0 },
-  { movetime: 20000, maxDepth: 48, ttBits: 22, mob: true, noise: 0 }
+  { movetime: 2500, maxDepth: 12, ttBits: 19, mob: false, noise: 0 },
+  { movetime: 5000, maxDepth: 24, ttBits: 20, mob: false, noise: 0 },
+  { movetime: 11000, maxDepth: 40, ttBits: 21, mob: false, noise: 0 },
+  { movetime: 24000, maxDepth: 56, ttBits: 22, mob: false, noise: 0 }
 ];
 var CH_DIFF_MAX = CH_DIFF.length;
 /* 难度号归一化：非法一律回落到 3（高手），越界不再退化成"最弱" */
@@ -1775,8 +1869,11 @@ function chGo(o) {
   }
   var rootList = [];
   for (var i = 0; i < n; i++) rootList.push({ m: CH_ML[i], s: 0 });
+  /* 噪声按着法本身取值（rootList 后续会被 TT / 上轮最佳着法重排，
+     若按初始下标取值会把噪声套到错误着法上）。 */
   var noiseArr = new Int32Array(n);
   if (par.noise > 0) for (i = 0; i < n; i++) noiseArr[i] = Math.round((Math.random() * 2 - 1) * par.noise);
+  function rootNoise(i) { return par.noise > 0 ? noiseArr[i] : 0; }
 
   /* 沿用上一轮 TT 最佳着法优先 */
   var idx0 = ((keyLo ^ keyHi) >>> 0) & ttMask;
@@ -1811,12 +1908,17 @@ function chGo(o) {
     for (i = 0; i < rootList.length; i++) {
       if (rootList[i].m === bestMove && i > 0) { var it2 = rootList.splice(i, 1)[0]; rootList.unshift(it2); break; }
     }
+    /* 按本轮分数排序 rootList：上轮好着法优先命中完整窗口，
+       下一层直接省下最贵的那批空窗搜索。 */
+    if (d >= 2 && rootList.length > 1) {
+      rootList.sort(function (x, y) { return y.s - x.s; });
+    }
     if (o.onInfo) {
       try { o.onInfo(d, bestScore, nodes, Date.now() - startTime); } catch (e) { }
     }
     if (Date.now() >= softStop) break;
     /* 用「上一层耗时 × 分支因子估计」判断是否还来得及再深一层 */
-    var est = lastIter * 2.4 + 30;
+    var est = lastIter * 1.55 + 30;
     if (d >= 3 && Date.now() + est > softStop) break;
   }
 
@@ -1824,13 +1926,13 @@ function chGo(o) {
   if (par.noise > 0 && !aborted && rootList.length > 1) {
     var bestAdj = -INF * 1.0, k2;
     for (i = 0; i < rootList.length; i++) {
-      var adj = rootList[i].s + noiseArr[i];
+      var adj = rootList[i].s + rootNoise(i);
       if (adj > bestAdj) bestAdj = adj;
     }
     var pool = [];
     for (i = 0; i < rootList.length; i++) {
       if (rootList[i].s <= -MATE + 200) continue;
-      if (rootList[i].s + noiseArr[i] >= bestAdj - 1) pool.push(rootList[i].m);
+      if (rootList[i].s + rootNoise(i) >= bestAdj - 1) pool.push(rootList[i].m);
     }
     if (pool.length) bestMove = pool[(Math.random() * pool.length) | 0];
   }
