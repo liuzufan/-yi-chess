@@ -803,11 +803,12 @@ function chHasLegal(ply) {
   var n = chGen(base, false);
   if (n === 0) return false;
   var us = side;
-  chBuildRays(kingSq[chKIdx(us)], us);
+  var inChk = chInCheck(us);
+  if (!inChk) chBuildRays(kingSq[chKIdx(us)], us);
   var i, m, ok;
   for (i = 0; i < n; i++) {
     m = CH_ML[base + i];
-    if (!chNeedLegalityCheck(m, us)) return true;
+    if (!inChk && !chNeedLegalityCheck(m, us)) return true;
     chMake(m);
     ok = !chAttacked(kingSq[chKIdx(us)], -us);
     chUnmake();
@@ -2299,6 +2300,7 @@ function setDiff(d){
     pendingDiff=d;
   }else{
     curDiff=d;
+    if(d===6&&curGame==='chess')chEnsureStockfish();
   }
 }
 // AI完成后应用暂存的难度变更
@@ -8912,6 +8914,9 @@ function yiDiffLabel(d) {
 }
 var CH = null, chReady = false, chBootErr = '';
 var chWorker = null, chWorkerOK = false, chWorkerTried = false, chPending = null;
+var chSfWorker = null, chSfReady = false, chSfFailed = false, chSfTried = false;
+var chSfBootTimer = null, chSfWatchTimer = null, chSfPendingGen = 0, chSfT0 = 0;
+var chSfGen = 0, chSfBusy = false, chSfInfo = null;
 var chStartFEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 var chMoves = [];
 /* chSans[i] 为 chMoves[i] 在「当时局面」下的 SAN，由 chSync() 一次性重放生成 */
@@ -10347,6 +10352,8 @@ function chAiMove() {
   }
   chPending = done;
 
+  if (curDiff === 6 && chStockfishGo(gen)) return;
+
   if (chWorkerOK && chWorker) {
     try { chWorker.postMessage({ type: 'go', gen: gen, fen: chStartFEN, moves: chMoves.slice(0), diff: curDiff }); return; }
     catch (e) { chWorkerOK = false; }
@@ -10382,6 +10389,142 @@ function chScoreText(sc) {
   if (sc < -29000) return '被将杀';
   var v = (sc / 100).toFixed(2);
   return (v > 0 ? '+' : '') + v;
+}
+
+function chEnsureStockfish() {
+  if (chSfFailed || chSfWorker) return !chSfFailed && !!chSfWorker;
+  if (chSfTried) return false;
+  chSfTried = true;
+  try {
+    chSfWorker = new Worker('stockfish-19-lite-single.js');
+    chSfWorker.onmessage = chOnStockfishMsg;
+    chSfWorker.onerror = function () { chStockfishFail('stockfish-error'); };
+    chSfWorker.postMessage('uci');
+    if (chSfBootTimer) clearTimeout(chSfBootTimer);
+    chSfBootTimer = setTimeout(function () { chStockfishFail('stockfish-timeout'); }, 12000);
+    return true;
+  } catch (e) {
+    chSfWorker = null;
+    chStockfishFail('stockfish-unavailable');
+    return false;
+  }
+}
+
+function chStockfishGo(gen) {
+  if (curDiff !== 6 || chSfFailed || !chEnsureStockfish()) return false;
+  if (!chSfReady) {
+    chSfPendingGen = gen;
+    return true;
+  }
+
+  chSfPendingGen = 0;
+  chSfGen = gen;
+  chSfBusy = true;
+  chSfInfo = { depth: 0, nodes: 0, score: 0, ms: 0, pv: [] };
+  chSfT0 = performance.now();
+  try {
+    var cmd = 'position fen ' + chStartFEN;
+    if (chMoves.length) cmd += ' moves ' + chMoves.join(' ');
+    chSfWorker.postMessage('ucinewgame');
+    chSfWorker.postMessage(cmd);
+    chSfWorker.postMessage('go movetime 5000');
+    if (chSfWatchTimer) clearTimeout(chSfWatchTimer);
+    chSfWatchTimer = setTimeout(function () {
+      if (chSfBusy && chSfGen === gen) chStockfishFail('search-timeout');
+    }, 12000);
+    return true;
+  } catch (e) {
+    chStockfishFail('search-send-error');
+    return false;
+  }
+}
+
+function chOnStockfishMsg(ev) {
+  var msg = String(ev && ev.data ? ev.data : '');
+  if (!msg) return;
+  if (msg === 'uciok') {
+    try {
+      chSfWorker.postMessage('setoption name Threads value 1');
+      chSfWorker.postMessage('setoption name Hash value 64');
+      chSfWorker.postMessage('setoption name Skill Level value 20');
+      chSfWorker.postMessage('isready');
+    } catch (e) { chStockfishFail('option-error'); }
+    return;
+  }
+  if (msg === 'readyok') {
+    chSfReady = true;
+    if (chSfBootTimer) { clearTimeout(chSfBootTimer); chSfBootTimer = null; }
+    if (chSfPendingGen) {
+      var gen = chSfPendingGen;
+      chSfPendingGen = 0;
+      if (gen === chSearchGen && chAi && curDiff === 6) chStockfishGo(gen);
+    }
+    return;
+  }
+  if (msg.indexOf('bestmove ') === 0) {
+    if (!chSfBusy) return;
+    chSfBusy = false;
+    if (chSfWatchTimer) { clearTimeout(chSfWatchTimer); chSfWatchTimer = null; }
+    var uci = msg.split(/\s+/)[1] || '';
+    if (!/^[a-h][1-8][a-h][1-8][nbrq]?$/.test(uci) || !CH.parseUci(uci)) {
+      chStockfishFail('bad-bestmove');
+      return;
+    }
+    var info = chSfInfo || { depth: 0, nodes: 0, score: 0, pv: [] };
+    var cb = chPending;
+    chPending = null;
+    if (cb) cb({
+      type: 'best', gen: chSfGen, uci: uci, depth: info.depth, nodes: info.nodes,
+      ms: Math.max(1, Math.round(performance.now() - chSfT0)), score: info.score, pv: info.pv
+    });
+    return;
+  }
+  if (msg.indexOf('info ') === 0 && chSfBusy && chAi && curGame === 'chess' && curDiff === 6) {
+    var p = msg.split(/\s+/), d = 0, nd = 0, ms = Math.max(1, Math.round(performance.now() - chSfT0)), sc = 0, pv = [], i;
+    for (i = 1; i < p.length - 1; i++) {
+      if (p[i] === 'depth') d = parseInt(p[i + 1], 10) || 0;
+      else if (p[i] === 'nodes') nd = parseInt(p[i + 1], 10) || 0;
+      else if (p[i] === 'time') ms = parseInt(p[i + 1], 10) || ms;
+      else if (p[i] === 'score') {
+        if (p[i + 1] === 'cp') sc = parseInt(p[i + 2], 10) || 0;
+        else if (p[i + 1] === 'mate') {
+          var mt = parseInt(p[i + 2], 10) || 0;
+          sc = mt > 0 ? 30000 - 2 * mt : -30000 - 2 * mt;
+        }
+      } else if (p[i] === 'pv') { pv = p.slice(i + 1); break; }
+    }
+    chSfInfo = { depth: d, nodes: nd, score: sc, ms: ms, pv: pv };
+    chInfo = { depth: d, nodes: nd, score: sc, pv: pv };
+    chShowAIInfo('深度 ' + d + ' · ' + Math.round(nd / 1000) + 'k 节点 · ' + (ms / 1000).toFixed(1) + 's · ' + chScoreText(sc));
+  }
+}
+
+function chStockfishFail(reason) {
+  chSfFailed = true;
+  chSfReady = false;
+  chSfPendingGen = 0;
+  chSfBusy = false;
+  if (chSfBootTimer) { clearTimeout(chSfBootTimer); chSfBootTimer = null; }
+  if (chSfWatchTimer) { clearTimeout(chSfWatchTimer); chSfWatchTimer = null; }
+  if (chSfWorker) { try { chSfWorker.terminate(); } catch (e) { } chSfWorker = null; }
+  if (chAi && curGame === 'chess' && chPending) {
+    showAIInfo('棋圣引擎加载失败，已回退到宗师算法：' + reason);
+    var cb = chPending;
+    chAiMoveFallback(cb);
+  }
+}
+
+function chStopStockfish(wasThinking) {
+  chSfPendingGen = 0;
+  chSfGen++;
+  chSfBusy = false;
+  if (chSfWatchTimer) { clearTimeout(chSfWatchTimer); chSfWatchTimer = null; }
+  if (wasThinking && chSfWorker) {
+    try { chSfWorker.terminate(); } catch (e) { }
+    chSfWorker = null; chSfReady = false; chSfTried = false;
+  } else if (chSfWorker && chSfReady) {
+    try { chSfWorker.postMessage('stop'); } catch (e) { }
+  }
 }
 
 function chEnsureWorker() {
@@ -10500,10 +10643,12 @@ function chShowAIInfo(t) {
 }
 
 function chStopAll() {
+  var sfWasThinking = chAi;
   chAbort = true;
   chAi = false;
   chSearchGen++;
   chPending = null;
+  chStopStockfish(sfWasThinking);
   if (chThinkTimer) { clearTimeout(chThinkTimer); chThinkTimer = null; }
   chShowThink = false;
   if (chWorker) { try { chWorker.terminate(); } catch (e) { } chWorker = null; chWorkerOK = false; chWorkerTried = false; }
@@ -10549,6 +10694,7 @@ function initChess() {
   chSel = -1; chSelTargets = [];
 
   chEnsureWorker();
+  if (curDiff === 6) chEnsureStockfish();
   if (!CH) {
     chBootErr = chBootErr || 'engine-missing';
     showAIInfo('引擎加载失败：' + chBootErr);
